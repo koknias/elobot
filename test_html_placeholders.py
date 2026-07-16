@@ -41,8 +41,10 @@ from typing import Iterable
 
 ROOT = Path(__file__).resolve().parent
 
-# Telegram Bot API HTML mode - exact tag list documented at
-# https://core.telegram.org/bots/api#html-style
+# Telegram Bot API HTML mode plus Bot API rich-message structural tags used by
+# ``send_rich_html_message`` / ``build_auto_rich_html``.  The test's purpose is
+# to catch accidental placeholder tags like ``<ник>`` and ``<text>`` in
+# user-facing strings, not intentional rich-card markup.
 ALLOWED_TAGS: frozenset[str] = frozenset({
     "b", "strong",
     "i", "em",
@@ -53,6 +55,10 @@ ALLOWED_TAGS: frozenset[str] = frozenset({
     "tg-spoiler",
     "blockquote",
     "span",            # used by tg for tg-spoiler/expandable blockquote
+    # Bot API rich-message tags used by this project.
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "p", "br", "table", "caption", "tr", "th", "td",
+    "details", "summary", "ul", "ol", "li", "footer",
 })
 
 # Capture ``<name`` (open) and ``</name`` (close).  We don't care about
@@ -158,8 +164,7 @@ def test_no_invalid_html_tags_in_user_strings() -> None:
     if all_findings:
         msg_lines = [
             "Found user-facing string literals containing literal '<word>' tokens",
-            "outside Telegram's HTML allowlist (b/i/u/s/em/strong/ins/strike/del/",
-            "a/code/pre/tg-spoiler/blockquote/span).",
+            "outside Telegram HTML / rich-message allowlists.",
             "",
             "Telegram will reject these messages with",
             "  telegram.error.BadRequest: Can't parse entities: unsupported start tag",

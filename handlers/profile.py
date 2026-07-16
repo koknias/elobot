@@ -368,6 +368,84 @@ async def cmd_setnick(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # /profile — full ELO/streak/match-history overview
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _profile_rich_html(
+    p: dict,
+    *,
+    total: int,
+    winrate: str,
+    avg_gf: str,
+    avg_ga: str,
+    elo_vsa: int,
+    elo_ri: int,
+    local_lines: list[str],
+    title_strs: list[str],
+) -> str:
+    """Rich HTML profile card. Kept separate from the plain fallback so
+    /profile never crashes when rich rendering is unavailable.
+    """
+    username = html.escape(mention(p["username"]))
+    game_nick = html.escape(p.get("game_nickname") or "не указан")
+    ban = ""
+    if is_player_banned(p):
+        reason = html.escape(p.get("banned_reason") or "")
+        ban = f"<p>🚫 <b>В бане до {_fmt_dt(p['banned_until'])}</b>" + (f"<br/>Причина: {reason}" if reason else "") + "</p>"
+    titles = ""
+    if title_strs:
+        titles = "<p>🏅 <b>Титулы:</b> " + " • ".join(html.escape(t) for t in title_strs) + "</p>"
+    locals_html = ""
+    if local_lines:
+        locals_html = "<details><summary>🏠 Локальные ELO</summary><ul>" + "".join(
+            f"<li>{line}</li>" for line in local_lines
+        ) + "</ul></details>"
+    return f"""
+<h2>👤 Профиль {username}</h2>
+{ban}
+<table bordered striped>
+<tr><th>Параметр</th><th>Значение</th></tr>
+<tr><td>🎮 Ник в игре</td><td>{game_nick}</td></tr>
+<tr><td>🏅 ELO общий</td><td><b>{round(p['elo'])}</b> {rank_label(p['elo'])}</td></tr>
+<tr><td>⚽ ELO ВСА</td><td><b>{elo_vsa}</b></td></tr>
+<tr><td>🎮 ELO РИ</td><td><b>{elo_ri}</b></td></tr>
+<tr><td>📊 Матчей</td><td>{total}</td></tr>
+<tr><td>✅ Винрейт</td><td>{winrate}</td></tr>
+<tr><td>В/Н/П</td><td>{p['wins']} / {p['draws']} / {p['losses']}</td></tr>
+<tr><td>⚽ Голы</td><td>{p['goals_scored']}–{p['goals_conceded']} (avg {avg_gf}/{avg_ga})</td></tr>
+<tr><td>🧤 Сухие</td><td>{p['clean_sheets']}</td></tr>
+<tr><td>🔥 Серия</td><td>{p['win_streak']} (рекорд {p['best_streak']})</td></tr>
+</table>
+{titles}
+{locals_html}
+<p><i>Официальные ELO считаются отдельно от турниров игроков.</i></p>
+""".strip()
+
+
+def _matches_rich_html(p: dict, history) -> str:
+    rows = []
+    for m in history:
+        p1 = get_player_by_id(m["player1_id"])
+        p2 = get_player_by_id(m["player2_id"])
+        is_p1 = p["id"] == m["player1_id"]
+        my_score = m["score1"] if is_p1 else m["score2"]
+        opp_score = m["score2"] if is_p1 else m["score1"]
+        opp_name = p2["username"] if is_p1 else p1["username"]
+        if my_score > opp_score:
+            result = "✅ Победа"
+        elif my_score < opp_score:
+            result = "❌ Поражение"
+        else:
+            result = "🤝 Ничья"
+        rows.append(
+            f"<tr><td>{result}</td><td><b>{my_score}:{opp_score}</b></td>"
+            f"<td>{html.escape(mention(opp_name))}</td><td>{html.escape(_fmt_date(m.get('played_at') or m.get('created_at')))}</td>"
+            f"<td><code>#{m['id']}</code></td></tr>"
+        )
+    return (
+        f"<h2>📋 Последние матчи {html.escape(mention(p['username']))}</h2>"
+        "<table bordered striped><tr><th>Итог</th><th>Счёт</th><th>Соперник</th><th>Дата</th><th>ID</th></tr>"
+        + "".join(rows)
+        + "</table>"
+    )
+
 async def cmd_profile(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if ctx.args:
         uname = ctx.args[0].lstrip("@").lower()
@@ -385,7 +463,7 @@ async def cmd_profile(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     avg_gf = f"{p['goals_scored']/total:.1f}" if total else "—"
     avg_ga = f"{p['goals_conceded']/total:.1f}" if total else "—"
     nick_line = (
-        f"🎮 Ник в игре: <b>{p['game_nickname']}</b>\n"
+        f"🎮 Ник в игре: <b>{html.escape(p['game_nickname'])}</b>\n"
         if p.get("game_nickname") else
         "🎮 Ник в игре: <i>не указан</i> — задай через /setnick\n"
     )
@@ -393,14 +471,14 @@ async def cmd_profile(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ban_line = ""
     if is_player_banned(p):
         ban_line = (
-            f"🚫 <b>В бане до {_fmt_dt(p['banned_until'])}</b>"
-            + (f"\nПричина: {p['banned_reason']}" if p.get("banned_reason") else "")
+            f"🚫 <b>В бане до {html.escape(_fmt_dt(p['banned_until']))}</b>"
+            + (f"\nПричина: {html.escape(p['banned_reason'])}" if p.get("banned_reason") else "")
             + "\n\n"
         )
 
     last_adj_line = ""
     if p.get("last_elo_adjust"):
-        last_adj_line = f"⚖️ Последняя ручная правка ELO: <i>{p['last_elo_adjust']}</i>\n"
+        last_adj_line = f"⚖️ Последняя ручная правка ELO: <i>{html.escape(p['last_elo_adjust'])}</i>\n"
 
     elo_vsa = round(p.get("elo_vsa") or 0)
     elo_ri  = round(p.get("elo_ri") or 0)
@@ -422,9 +500,9 @@ async def cmd_profile(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     conn.close()
     for r in rows:
         local_lines.append(
-            f"  • <b>{r['name']}</b> [{t_type_label(r['tournament_type'])}] "
+            f"  • <b>{html.escape(r['name'])}</b> [{html.escape(t_type_label(r['tournament_type']))}] "
             f"(ID: {r['id']}): <b>{round(r['elo'] or 0)}</b> "
-            f"<i>({r['stage']})</i>"
+            f"<i>({html.escape(r['stage'])})</i>"
         )
     local_block = ""
     if local_lines:
@@ -553,8 +631,8 @@ async def cmd_matches(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if t:
                 tt = f" [{t_type_label(t['tournament_type'])}]"
         lines.append(
-            f"{result}  <b>{my_score}:{opp_score}</b>  vs {mention(opp_name)}  "
-            f"<i>{date}</i>{tt}  <code>#{m['id']}</code>"
+            f"{result}  <b>{my_score}:{opp_score}</b>  vs {html.escape(mention(opp_name))}  "
+            f"<i>{html.escape(date)}</i>{html.escape(tt)}  <code>#{m['id']}</code>"
         )
     lines.append("")
     lines.append(

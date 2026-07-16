@@ -83,18 +83,38 @@ log = logging.getLogger(__name__)
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Same fallback chain as /jokes — instruction-tuned free-tier models
-# first, experimental tags last. Override globally via the
+# NVIDIA NIM / integrate.api.nvidia.com (OpenAI-compatible) text models.
+# Keep the key in env only: NVIDIA_API_KEY or NVIDIA_NIM_API_KEY.
+_NVIDIA_BASE_URL = (os.getenv("NVIDIA_BASE_URL") or "https://integrate.api.nvidia.com/v1").rstrip("/")
+_NVIDIA_CHAT_URL = f"{_NVIDIA_BASE_URL}/chat/completions"
+_NVIDIA_TEXT_MODELS: tuple[str, ...] = (
+    "deepseek/deepseek-v4-flash",
+    "moonshotai/kimi-k2.6",
+    "z-ai/glm-5.2",
+    "minimaxai/minimax-m3",
+)
+
+# Same fallback chain as /jokes — NVIDIA direct first when configured,
+# then OpenRouter fallbacks. Override globally via the
 # ``ANALYZE_MODELS`` env var (comma-separated). We do NOT fall back to
 # ``JOKES_MODELS`` because the two features may diverge later (jokes
 # wants creative/temperature, analyze wants concise/factual).
 _DEFAULT_ANALYZE_MODELS: tuple[str, ...] = (
+    *_NVIDIA_TEXT_MODELS,
     "google/gemma-4-31b-it:free",
     "nvidia/nemotron-3-super-120b-a12b:free",
     "openrouter/owl-alpha",
 )
 
 _OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+def _nvidia_key() -> str:
+    return (os.getenv("NVIDIA_API_KEY") or os.getenv("NVIDIA_NIM_API_KEY") or "").strip()
+
+
+def _is_nvidia_text_model(model: str) -> bool:
+    return model in _NVIDIA_TEXT_MODELS
 
 # N (number of recent messages) bounds.
 _MIN_N = 20
@@ -579,8 +599,11 @@ def _call_openrouter_sync(
     if attempts is None:
         attempts = []
     keys = _openrouter_keys()
-    if not keys:
+    nvidia_key = _nvidia_key()
+    has_nvidia_models = any(_is_nvidia_text_model(m) for m in models)
+    if not keys and not (nvidia_key and has_nvidia_models):
         attempts.append("openrouter: нет ключей (OPENROUTER_API_KEY)")
+        attempts.append("nvidia: нет ключа (NVIDIA_API_KEY или NVIDIA_NIM_API_KEY)")
         return None, None
     if not models:
         attempts.append("openrouter: пустой список моделей")
@@ -608,11 +631,32 @@ def _call_openrouter_sync(
     }
 
     for model in models:
-        body = {**body_template, "model": model}
+        is_nvidia = _is_nvidia_text_model(model)
+        if is_nvidia:
+            if not nvidia_key:
+                attempts.append(f"nvidia {model}: нет ключа (NVIDIA_API_KEY)")
+                continue
+            provider = "nvidia"
+            url = _NVIDIA_CHAT_URL
+            key_pool = [nvidia_key]
+            body = {
+                "messages": body_template["messages"],
+                "max_tokens": body_template["max_tokens"],
+                "temperature": body_template["temperature"],
+                "model": model,
+            }
+        else:
+            if not keys:
+                attempts.append("openrouter: нет ключей (OPENROUTER_API_KEY)")
+                continue
+            provider = "openrouter"
+            url = _OPENROUTER_URL
+            key_pool = keys
+            body = {**body_template, "model": model}
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
-        for key in keys:
+        for key in key_pool:
             req = urllib.request.Request(
-                _OPENROUTER_URL,
+                url,
                 data=payload,
                 headers={
                     "Authorization": f"Bearer {key}",
@@ -635,7 +679,7 @@ def _call_openrouter_sync(
                 except Exception:
                     pass
                 attempts.append(
-                    f"openrouter {model} key…{key[-6:]}: HTTP {e.code} "
+                    f"{provider} {model} key…{key[-6:]}: HTTP {e.code} "
                     f"{err_body[:80]}"
                 )
                 # 401/403/429 — bad key or rate-limited, try next key.
@@ -647,7 +691,7 @@ def _call_openrouter_sync(
                 break
             except Exception as e:
                 attempts.append(
-                    f"openrouter {model} key…{key[-6:]}: "
+                    f"{provider} {model} key…{key[-6:]}: "
                     f"{type(e).__name__} {e}"
                 )
                 continue
@@ -655,17 +699,17 @@ def _call_openrouter_sync(
             try:
                 data = json.loads(raw)
             except Exception:
-                attempts.append(f"openrouter {model}: non-JSON {raw[:80]!r}")
+                attempts.append(f"{provider} {model}: non-JSON {raw[:80]!r}")
                 continue
             err = data.get("error") if isinstance(data, dict) else None
             if err:
                 attempts.append(
-                    f"openrouter {model}: API error {str(err)[:120]}"
+                    f"{provider} {model}: API error {str(err)[:120]}"
                 )
                 continue
             choices = (data.get("choices") or []) if isinstance(data, dict) else []
             if not choices:
-                attempts.append(f"openrouter {model}: empty choices")
+                attempts.append(f"{provider} {model}: empty choices")
                 continue
             msg = choices[0].get("message") if isinstance(choices[0], dict) else None
             content = (msg.get("content") if isinstance(msg, dict) else None) or ""
@@ -686,7 +730,7 @@ def _call_openrouter_sync(
                     cleaned = validator(content)
                     if not cleaned:
                         attempts.append(
-                            f"openrouter {model}: rejected (CoT/meta "
+                            f"{provider} {model}: rejected (CoT/meta "
                             f"leak, {len(content)} chars)"
                         )
                         log.info(
@@ -697,11 +741,11 @@ def _call_openrouter_sync(
                         break
                     content = cleaned
                 attempts.append(
-                    f"openrouter {model}: OK ({len(content)} chars, {dt:.1f}s)"
+                    f"{provider} {model}: OK ({len(content)} chars, {dt:.1f}s)"
                 )
                 log.info("analyze: %s OK in %.1fs (%d chars)", model, dt, len(content))
                 return content, model
-            attempts.append(f"openrouter {model}: empty content")
+            attempts.append(f"{provider} {model}: empty content")
     return None, None
 
 
