@@ -111,7 +111,7 @@ from ocr import (
 )
 from standings_image import render_standings_png
 
-TOKEN = os.environ.get("BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN")
+TOKEN = (os.environ.get("BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
 if not TOKEN:
     raise RuntimeError(
         "BOT_TOKEN (or TELEGRAM_BOT_TOKEN) env var is required. "

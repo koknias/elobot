@@ -54,7 +54,7 @@ async def send_rich_html_message(
     reply_markup=None,
 ) -> dict:
     """Send a Bot API 10.x rich message using rich HTML markup."""
-    bot_token = token or os.environ.get("BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN")
+    bot_token = (token or os.environ.get("BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
     if not bot_token:
         raise RichMessageError("BOT_TOKEN is not configured")
 
