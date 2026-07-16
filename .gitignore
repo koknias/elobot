@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+tournament_bg/
+result.json
+Текстовий файл….txt
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
