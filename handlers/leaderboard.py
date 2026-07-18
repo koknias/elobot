@@ -700,6 +700,7 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ── Build text details (expandable blockquote) ────────────────────
     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
     detail_lines: list[str] = []
+    tg_url: str | None = None
 
     if rows:
         for i, r in enumerate(rows, 1):
@@ -753,6 +754,16 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 caption_parts.append(
                     f"\n<blockquote expandable>{details_text}</blockquote>"
                 )
+            vs_data = get_goals_vs_opponents_for_tournament(t["id"])
+            tg_url = _publish_bombardiers_telegraph(
+                t, rows, footballer_rows,
+                footballers_by_player, vs_data,
+            )
+            if tg_url:
+                caption_parts.append(
+                    f'\n📊 <a href="{tg_url}">Полная статистика '
+                    f'бомбардиров + кому забил</a>'
+                )
             # Append footer
             _tb_footer = get_random_footer(t, FOOTER_CTX_TABLE)
             if _tb_footer:
@@ -784,6 +795,11 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         f"\n<blockquote expandable>"
                         f"{chr(10).join(detail_lines)}</blockquote>"
                     )
+                if tg_url:
+                    full_lines.append(
+                        f'\n📊 <a href="{tg_url}">Полная статистика '
+                        f'бомбардиров + кому забил</a>'
+                    )
                 _tb_footer3 = get_random_footer(t, FOOTER_CTX_TABLE)
                 if _tb_footer3:
                     full_lines.append(_tb_footer3)
@@ -792,11 +808,6 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 # If even the separate message is too long for Telegram
                 # (4096 char limit), publish full stats to Telegraph
                 if len(full_text) > 4000:
-                    vs_data = get_goals_vs_opponents_for_tournament(t["id"])
-                    tg_url = _publish_bombardiers_telegraph(
-                        t, rows, footballer_rows,
-                        footballers_by_player, vs_data,
-                    )
                     if tg_url:
                         short_msg = list(header)
                         # Include top-5 in Telegram as a teaser
@@ -827,6 +838,17 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         lines.append(
             f"\n<blockquote expandable>{details_text}</blockquote>"
         )
+    if tg_url is None:
+        vs_data = get_goals_vs_opponents_for_tournament(t["id"])
+        tg_url = _publish_bombardiers_telegraph(
+            t, rows, footballer_rows,
+            footballers_by_player, vs_data,
+        )
+    if tg_url:
+        lines.append(
+            f'\n📊 <a href="{tg_url}">Полная статистика '
+            f'бомбардиров + кому забил</a>'
+        )
     _tb_footer2 = get_random_footer(t, FOOTER_CTX_TABLE)
     if _tb_footer2:
         lines.append(_tb_footer2)
@@ -835,11 +857,6 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # If text exceeds Telegram limit, publish to Telegraph
     if len(full_text) > 4000:
-        vs_data = get_goals_vs_opponents_for_tournament(t["id"])
-        tg_url = _publish_bombardiers_telegraph(
-            t, rows, footballer_rows,
-            footballers_by_player, vs_data,
-        )
         if tg_url:
             short_msg = list(header)
             if detail_lines:
