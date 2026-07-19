@@ -190,6 +190,10 @@ def _render_passport_default_png(
     _draw_rounded_rect(img, draw, _s(12), _s(12), w - _s(24), h - _s(24),
                        radius=_s(20), fill=CARD_BG)
 
+    # ── Subtle background decoration ─────────────────────────────────────
+    deco = _font(_s(60), bold=True)
+    _draw_centered(img, w // 2, _s(360), "GP", font=deco, fill=(28, 30, 40))
+
     # ── Header band ──────────────────────────────────────────────────────
     _draw_rounded_rect(img, draw, _s(12), _s(12), w - _s(24), _s(70),
                        radius=_s(20), fill=HEADER_BG)
@@ -328,23 +332,28 @@ def _render_passport_default_png(
     return buf.getvalue()
 
 
-# ── Mafia style ──────────────────────────────────────────────────────────────
-MAFIA_BG        = (10, 10, 10)
-MAFIA_CARD      = (20, 18, 16)
-MAFIA_HEADER    = (200, 80, 0)
-MAFIA_ACCENT    = (230, 120, 0)
-MAFIA_STRIPE    = (35, 30, 25)
-MAFIA_WANTED    = (220, 50, 50)
+# ── McLovin (mafia) style ─────────────────────────────────────────────────────
+# Horizontal ID card inspired by the McLovin fake ID from Superbad.
+ML_BG_TOP    = (20, 80, 160)
+ML_BG_BOT    = (10, 50, 120)
+ML_ACCENT    = (255, 200, 50)
+ML_GOLD      = (200, 160, 30)
+ML_CARD_BG   = (240, 240, 245)
+ML_TEXT      = (20, 20, 30)
+ML_MUTED     = (100, 110, 130)
+ML_FIELD     = (180, 185, 195)
 
 
-def _draw_prison_stripes(img: Image.Image, draw: ImageDraw.ImageDraw,
-                         x: int, y: int, w: int, h: int) -> None:
-    stripe_h = _s(6)
-    gap = _s(10)
-    cy = y
-    while cy < y + h:
-        draw.rectangle([x, cy, x + w, cy + stripe_h], fill=MAFIA_STRIPE)
-        cy += stripe_h + gap
+def _draw_gradient_bar(img: Image.Image, y: int, h: int,
+                       color_top: tuple, color_bot: tuple) -> None:
+    w = img.width
+    for row in range(h):
+        t = row / max(h - 1, 1)
+        r = int(color_top[0] + (color_bot[0] - color_top[0]) * t)
+        g = int(color_top[1] + (color_bot[1] - color_top[1]) * t)
+        b = int(color_top[2] + (color_bot[2] - color_top[2]) * t)
+        draw = ImageDraw.Draw(img)
+        draw.line([(0, y + row), (w, y + row)], fill=(r, g, b))
 
 
 def _render_passport_mafia_png(
@@ -354,8 +363,10 @@ def _render_passport_mafia_png(
     notes: list[dict],
     avatar_bytes: bytes | None = None,
 ) -> bytes:
-    w = _s(440)
-    h = _s(780)
+    CARD_W = _s(720)
+    CARD_H = _s(450)
+    w = CARD_W + _s(24)
+    h = CARD_H + _s(24)
 
     pid = player.get("id", 0)
     username = player.get("username", "unknown") or "unknown"
@@ -374,145 +385,126 @@ def _render_passport_mafia_png(
     else:
         reg = str(raw_reg or "")[:10]
 
-    img = Image.new("RGB", (w, h), MAFIA_BG)
+    total_trophies = sum(trophy_counts.values())
+
+    img = Image.new("RGB", (w, h), (10, 10, 14))
     draw = ImageDraw.Draw(img)
 
-    # Inner card
-    _draw_rounded_rect(img, draw, _s(12), _s(12), w - _s(24), h - _s(24),
-                       radius=_s(4), fill=MAFIA_CARD)
-    # Orange border
-    draw.rounded_rectangle([_s(12), _s(12), w - _s(13), h - _s(13)],
-                           radius=_s(4), outline=MAFIA_ACCENT, width=_s(2))
+    # ── Card body with gradient top bar ───────────────────────────────────
+    cx = _s(12)
+    cy_card = _s(12)
+    _draw_rounded_rect(img, draw, cx, cy_card, CARD_W, CARD_H,
+                       radius=_s(16), fill=ML_CARD_BG)
+    # Blue gradient top band
+    bar_h = _s(90)
+    _draw_gradient_bar(img, cy_card, bar_h, ML_BG_TOP, ML_BG_BOT)
+    # Gold bottom border on bar
+    draw.rectangle([cx, cy_card + bar_h - _s(3), cx + CARD_W, cy_card + bar_h],
+                   fill=ML_GOLD)
 
-    # Prison stripes background in upper section
-    _draw_prison_stripes(img, draw, _s(16), _s(16), w - _s(32), _s(200))
+    # ── Header ───────────────────────────────────────────────────────────
+    header_font = _font(_s(26), bold=True)
+    _draw_centered(img, cx + CARD_W // 2, cy_card + _s(18),
+                   "GUARDIOLA LEAGUE", font=header_font, fill=(255, 255, 255))
+    sub_font = _font(_s(12), bold=False)
+    _draw_centered(img, cx + CARD_W // 2, cy_card + _s(52),
+                   "ИДЕНТИФИКАЦИОННАЯ КАРТА • OFFICIAL ID",
+                   font=sub_font, fill=(200, 215, 240))
+    _draw_centered(img, cx + CARD_W // 2, cy_card + _s(70),
+                   f"#{pid}", font=_font(_s(13), bold=True), fill=ML_GOLD)
 
-    # ── WANTED header ────────────────────────────────────────────────────
-    wanted_font = _font(_s(32), bold=True)
-    _draw_centered(img, w // 2, _s(24), "РАЗЫСКИВАЕТСЯ",
-                   font=wanted_font, fill=MAFIA_WANTED)
-    sub_font = _font(_s(11), bold=False)
-    _draw_centered(img, w // 2, _s(56), "Криминальный паспорт Гвардиолыча",
-                   font=sub_font, fill=MUTED)
+    # ── Photo (left side) ────────────────────────────────────────────────
+    photo_x = cx + _s(30)
+    photo_y = cy_card + _s(110)
+    photo_w = _s(140)
+    photo_h = _s(180)
 
-    # ── Avatar (mugshot) ─────────────────────────────────────────────────
-    av_cx = w // 2
-    av_cy = _s(140)
-    av_r = _s(AVATAR_SIZE // 2)
-    # Height marker lines
-    marker_l = av_cx - av_r - _s(20)
-    marker_r = av_cx + av_r + _s(20)
-    marker_top = av_cy - av_r - _s(8)
-    marker_bot = av_cy + av_r + _s(8)
-    draw.line([marker_l, marker_top, marker_r, marker_top], fill=MAFIA_ACCENT, width=_s(1))
-    draw.line([marker_l, marker_bot, marker_r, marker_bot], fill=MAFIA_ACCENT, width=_s(1))
-    draw.line([marker_l, marker_top, marker_l, marker_bot], fill=MAFIA_ACCENT, width=_s(1))
-    draw.line([marker_r, marker_top, marker_r, marker_bot], fill=MAFIA_ACCENT, width=_s(1))
+    # Photo background
+    _draw_rounded_rect(img, draw, photo_x, photo_y, photo_w, photo_h,
+                       radius=_s(8), fill=(220, 225, 235))
+    # Gold border around photo
+    draw.rounded_rectangle([photo_x, photo_y, photo_x + photo_w, photo_y + photo_h],
+                           radius=_s(8), outline=ML_GOLD, width=_s(3))
 
+    # Avatar inside photo area
+    av_cy = photo_y + photo_h // 2 - _s(5)
+    av_cx = photo_x + photo_w // 2
+    av_r = _s(50)
     _draw_circle_avatar(img, av_cx, av_cy, av_r, avatar_bytes)
+    # Under-photo label
+    _draw_centered(img, av_cx, photo_y + photo_h - _s(18),
+                   f"@{username}", font=_font(_s(9)), fill=ML_MUTED)
 
-    # ── ID ───────────────────────────────────────────────────────────────
-    id_font = _font(_s(14), bold=True)
-    id_str = f"ДЕЛО #{pid}"
-    _draw_centered(img, w // 2, _s(200), id_str, font=id_font, fill=MAFIA_ACCENT)
+    # ── Info fields (right side) ─────────────────────────────────────────
+    info_x = photo_x + photo_w + _s(24)
+    field_w = cx + CARD_W - info_x - _s(24)
+    row_y = photo_y
 
-    # ── Username as "Кличка" ─────────────────────────────────────────────
-    name_y = _s(235)
-    name_font = _font(_s(22), bold=True)
-    _draw_centered(img, w // 2, name_y, f"Кличка: @{username}",
-                   font=name_font, fill=TEXT)
-    if game_nick:
-        nick_y = name_y + _s(30)
-        nick_font = _font(_s(14), bold=False)
-        _draw_centered(img, w // 2, nick_y, f"Настоящее имя: {game_nick}",
-                       font=nick_font, fill=MUTED)
+    def _field(label: str, value: str, y: int) -> int:
+        f_font = _font(_s(9), bold=False)
+        v_font = _font(_s(16), bold=True)
+        draw_text_with_emoji(img, (info_x, y), label, font=f_font, fill=ML_MUTED)
+        vy = y + _s(14)
+        draw_text_with_emoji(img, (info_x, vy), value, font=v_font, fill=ML_TEXT)
+        return vy + _s(32)
 
-    # ── Divider ──────────────────────────────────────────────────────────
-    div_y = _s(295)
-    draw.line([_s(40), div_y, w - _s(40), div_y], fill=MAFIA_ACCENT, width=_s(2))
+    row_y = _field("NAME / ИМЯ", game_nick or username, row_y) + _s(2)
+    row_y = _field("ALIAS / КЛИЧКА", f"@{username}", row_y)
+    row_y = _field("STATUS / СТАТУС", f"ELO {int(elo)}", row_y)
 
-    # ── Stats ────────────────────────────────────────────────────────────
-    stat_y = div_y + _s(16)
-    stat_font = _font(_s(14), bold=False)
-    stat_val_font = _font(_s(18), bold=True)
-    cols = [
-        ("РЕЙТИНГ", str(int(elo))),
-        ("У/П/Н", f"{w_}/{l_}/{d_}"),
-        ("З/П Голы", f"{gf}/{ga}"),
-    ]
-    col_w = w // 3
-    for i, (label, value) in enumerate(cols):
-        cx = col_w // 2 + col_w * i
-        draw_text_with_emoji(img, (cx, stat_y), label, font=stat_font, fill=MUTED)
-        draw_text_with_emoji(img, (cx, stat_y + _s(22)), value,
-                             font=stat_val_font, fill=MAFIA_ACCENT)
+    # Trophies as fake "CRIMES / НАРУШЕНИЯ"
+    crimes = ", ".join(
+        f"{v}x{k}" for k, v in [("Чемпион", trophy_counts.get("main", 0)),
+                                 ("VSA", trophy_counts.get("vsa", 0)),
+                                 ("Фэнтези", trophy_counts.get("fantasy", 0)),
+                                 ("СК", trophy_counts.get("supercup", 0))]
+        if v > 0
+    ) or "Нет"
+    row_y = _field("CRIMES / НАРУШЕНИЯ", crimes, row_y)
 
-    # ── Trophies as "Криминальные заслуги" ───────────────────────────────
-    trop_y = stat_y + _s(65)
-    trop_font = _font(_s(14), bold=False)
-    trop_val_font = _font(_s(14), bold=True)
-    type_labels = {"main": "Ограблений", "vsa": "Разбоев",
-                   "fantasy": "Афер", "supercup": "Корон"}
-    trop_items = []
-    for ttype, tlabel in type_labels.items():
-        cnt = trophy_counts.get(ttype, 0)
-        if cnt > 0:
-            trop_items.append((tlabel, cnt))
+    # W/L/D
+    row_y = _field("W / L / D", f"{w_}/{l_}/{d_}", row_y)
 
-    if trop_items:
-        _draw_centered(img, w // 2, trop_y, "— КРИМИНАЛЬНЫЕ ЗАСЛУГИ —",
-                       font=_font(_s(13)), fill=MUTED)
-        row_y = trop_y + _s(22)
-        per_row = 2
-        for idx, (tlabel, cnt) in enumerate(trop_items):
-            col = idx % per_row
-            row = idx // per_row
-            cx = w // (per_row * 2) + col * (w // per_row)
-            cy = row_y + row * _s(28)
-            line = f"  {tlabel}: "
-            lw = measure_text_with_emoji(line, trop_font)
-            draw_text_with_emoji(img, (cx, cy), line, font=trop_font, fill=MUTED)
-            draw_text_with_emoji(img, (cx + lw, cy), str(cnt),
-                                 font=trop_val_font, fill=MAFIA_ACCENT)
-    else:
-        _draw_centered(img, w // 2, trop_y + _s(8),
-                       "Чистое дело", font=_font(_s(13)), fill=MUTED)
-
-    # ── Статья / титулы ──────────────────────────────────────────────────
-    badge_y = trop_y + _s(75)
+    # Titles
     if titles:
-        _draw_centered(img, w // 2, badge_y, "— СТАТЬИ —",
-                       font=_font(_s(13)), fill=MUTED)
-        b_font = _font(_s(12), bold=False)
-        b_y = badge_y + _s(22)
-        badge_text = " • ".join(titles[:4])
-        if len(titles) > 4:
-            badge_text += f" … +{len(titles) - 4}"
-        bt = _trunc(badge_text, b_font, w - _s(60))
-        _draw_centered(img, w // 2, b_y, bt, font=b_font, fill=TEXT)
-
-    # ── Notes ────────────────────────────────────────────────────────────
-    note_base_y = badge_y + _s(50) if titles else badge_y + _s(30)
-    if notes:
-        _draw_centered(img, w // 2, note_base_y, "— ПОКАЗАНИЯ —",
-                       font=_font(_s(13)), fill=MUTED)
-        n_font = _font(_s(12), bold=False)
-        n_y = note_base_y + _s(22)
-        for note in notes[:3]:
-            au = note.get("author_username", "?") or "?"
-            nt = (note.get("note_text", "") or "")[:50]
-            line = f"  \"{nt}\" — @{au}"
-            lt = _trunc(line, n_font, w - _s(60))
-            draw_text_with_emoji(img, (_s(30), n_y), lt, font=n_font, fill=TEXT)
-            n_y += _s(19)
+        joined = " • ".join(titles[:3])
+        if len(titles) > 3:
+            joined += f" +{len(titles) - 3}"
     else:
-        _draw_centered(img, w // 2, note_base_y + _s(8),
-                       "Чистое досье", font=_font(_s(12)), fill=MUTED)
+        joined = "—"
+    t_y = row_y + _s(6)
+    f_font = _font(_s(9))
+    draw_text_with_emoji(img, (info_x, t_y), "BADGES / ЗВАНИЯ",
+                         font=f_font, fill=ML_MUTED)
+    draw_text_with_emoji(img, (info_x, t_y + _s(14)), joined,
+                         font=_font(_s(11), bold=False), fill=ML_TEXT)
 
-    # ── Footer ───────────────────────────────────────────────────────────
-    foot_font = _font(_s(10), bold=False)
-    _draw_centered(img, w // 2, h - _s(20),
-                   f"Под надзором с {reg}", font=foot_font, fill=MUTED)
+    # ── Notes below photo ────────────────────────────────────────────────
+    note_y = photo_y + photo_h + _s(16)
+    line_h = _s(18)
+    if notes:
+        n_font = _font(_s(10), bold=False)
+        _draw_centered(img, cx + CARD_W // 2, note_y, "— NOTES / ЗАМЕТКИ —",
+                       font=_font(_s(9)), fill=ML_MUTED)
+        ny = note_y + _s(16)
+        for note in notes[:2]:
+            au = note.get("author_username", "?") or "?"
+            nt = (note.get("note_text", "") or "")[:45]
+            line = f"  \"{nt}\" — @{au}"
+            lt = _trunc(line, n_font, CARD_W - _s(60))
+            draw_text_with_emoji(img, (_s(24), ny), lt, font=n_font, fill=ML_TEXT)
+            ny += line_h
+    else:
+        _draw_centered(img, cx + CARD_W // 2, note_y + _s(8),
+                       "Нет заметок", font=_font(_s(10)), fill=ML_MUTED)
+
+    # ── Footer bar ───────────────────────────────────────────────────────
+    foot_y = cy_card + CARD_H - _s(28)
+    draw.rectangle([cx, foot_y, cx + CARD_W, cy_card + CARD_H],
+                   fill=ML_BG_TOP)
+    _draw_centered(img, cx + CARD_W // 2, foot_y + _s(4),
+                   f"ISSUED / ВЫДАН: {reg}   |   CLASS: M-LEAGUE",
+                   font=_font(_s(10), bold=True), fill=(255, 255, 255))
 
     buf = BytesIO()
     img.save(buf, format="PNG", optimize=True)

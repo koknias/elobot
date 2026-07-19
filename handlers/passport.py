@@ -41,22 +41,25 @@ async def _download_avatar(user_id: int, ctx: ContextTypes.DEFAULT_TYPE) -> byte
     return None
 
 
+_STYLES = frozenset({"mafia", "mclovin", "криминал", "мактрахер"})
+
+
 def _resolve_player_arg_or_user(
     args: list[str],
     update: Update,
 ) -> tuple[dict | None, str]:
     style = "default"
     if args:
-        uname = args[0].lstrip("@").lower()
-        if uname in ("mafia", "криминал", "мактрахер"):
+        first = args[0].lstrip("@").lower()
+        if first in _STYLES:
             p = _player_from_user(update.effective_user)
-            style = "mafia"
+            style = "mclovin" if first in ("mclovin",) else "mafia"
             return p, style
-        p = get_player(uname)
+        p = get_player(first)
         if not p:
             return None, style
-        if len(args) > 1 and args[1].lower() in ("mafia", "криминал", "мактрахер"):
-            style = "mafia"
+        if len(args) > 1 and args[1].lower() in _STYLES:
+            style = "mclovin" if args[1].lower() in ("mclovin",) else "mafia"
         return p, style
     return _player_from_user(update.effective_user), style
 
@@ -74,7 +77,7 @@ def _build_trophy_counts(player_id: int) -> dict[str, int]:
 async def cmd_passport(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     p, style = _resolve_player_arg_or_user(ctx.args, update)
     if not p:
-        await send(update, "❌ Игрок не найден.\nИспользование: /passport [@username]\n/mafia [@username] — криминальный паспорт")
+        await send(update, "❌ Игрок не найден.\n/passport [@user] — обычный\n/mafia [@user] — мактрахер\n/mclovin [@user] — mclovin style")
         return
 
     from passport_image import render_passport_png
@@ -102,8 +105,12 @@ async def cmd_passport(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     photo = BytesIO(png_bytes)
     photo.name = "passport.png"
 
-    emoji = "📋" if style == "default" else "🚨"
-    label = "Паспорт" if style == "default" else "Криминальный паспорт"
+    if style == "default":
+        emoji, label = "📋", "Паспорт"
+    elif style == "mafia":
+        emoji, label = "🚨", "Криминальный паспорт"
+    else:
+        emoji, label = "🆔", "McLovin ID"
     caption = (
         f"{emoji} {label} {mention(p['username'])}"
         f"{' (' + html.escape(p['game_nickname']) + ')' if p.get('game_nickname') else ''}\n"
@@ -121,6 +128,11 @@ async def cmd_passport(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_passport_mafia(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.args = (ctx.args or []) + ["mafia"]  # type: ignore[attr-defined]
+    await cmd_passport(update, ctx)
+
+
+async def cmd_passport_mclovin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    ctx.args = (ctx.args or []) + ["mclovin"]  # type: ignore[attr-defined]
     await cmd_passport(update, ctx)
 
 
