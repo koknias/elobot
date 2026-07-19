@@ -5479,18 +5479,17 @@ def list_top_reacted_jokes(
 
 def add_passport_note(target_id: int, author_id: int, note_text: str) -> dict:
     conn = get_conn()
-    c = conn.cursor()
-    c.execute(
+    note_id = conn.insert_returning_id(
         "INSERT INTO passport_notes (target_id, author_id, note_text) "
         "VALUES (?, ?, ?)",
         (int(target_id), int(author_id), str(note_text)[:500]),
     )
-    row = c.execute(
-        "SELECT * FROM passport_notes WHERE id=?", (c.lastrowid,)
-    ).fetchone()
+    row = conn.execute(
+        "SELECT * FROM passport_notes WHERE id=?", (note_id,)
+    ).fetchone() if note_id is not None else None
     conn.commit()
     conn.close()
-    return dict(row)
+    return dict(row) if row is not None else {}
 
 
 def get_passport_notes(target_id: int, limit: int = 5) -> list[dict]:
@@ -5506,4 +5505,3 @@ def get_passport_notes(target_id: int, limit: int = 5) -> list[dict]:
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
-
