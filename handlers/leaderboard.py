@@ -19,6 +19,7 @@ keeps working).
 
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 from io import BytesIO
@@ -783,12 +784,15 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # the leaderboard summary, a footer, and a link to the full page.
     if not text_mode and footballer_rows:
         try:
-            png_bytes = render_tablebomb_png(footballer_rows, tournament=t)
+            # Run PNG rendering and DB query concurrently
+            png_task = asyncio.to_thread(render_tablebomb_png, footballer_rows, tournament=t)
+            vs_task = asyncio.to_thread(get_goals_vs_opponents_for_tournament, t["id"])
+            png_bytes, vs_data = await asyncio.gather(png_task, vs_task)
             photo = BytesIO(png_bytes)
             photo.name = "tablebomb.png"
 
-            vs_data = get_goals_vs_opponents_for_tournament(t["id"])
-            tg_url = _publish_bombardiers_telegraph(
+            tg_url = await asyncio.to_thread(
+                _publish_bombardiers_telegraph,
                 t, rows, footballer_rows,
                 footballers_by_player, vs_data,
             )
