@@ -186,6 +186,8 @@ __all__ = [
     "delete_tournament_winner",
     # Passport
     "add_passport_note",
+    "delete_passport_note",
+    "get_passport_note",
     "get_passport_notes",
 ]
 
@@ -5490,6 +5492,24 @@ def add_passport_note(target_id: int, author_id: int, note_text: str) -> dict:
     conn.commit()
     conn.close()
     return dict(row) if row is not None else {}
+
+
+def get_passport_note(note_id: int) -> dict | None:
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT * FROM passport_notes WHERE id=?", (int(note_id),)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row is not None else None
+
+
+def delete_passport_note(note_id: int) -> bool:
+    conn = get_conn()
+    cur = conn.execute("DELETE FROM passport_notes WHERE id=?", (int(note_id),))
+    deleted = cur.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
 
 
 def get_passport_notes(target_id: int, limit: int = 5) -> list[dict]:

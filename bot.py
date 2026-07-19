@@ -360,6 +360,7 @@ from handlers.passport import (  # noqa: E402
     cmd_passport_mafia,
     cmd_passport_mclovin,
     cmd_passport_note,
+    cmd_passport_note_del,
     cmd_passport_notes,
 )
 from handlers.rich_extra import (  # noqa: E402
@@ -8004,6 +8005,10 @@ def main():
     app.add_handler(CommandHandler("passportmclovin", cmd_passport_mclovin))
     app.add_handler(CommandHandler("passport_note", cmd_passport_note))
     app.add_handler(CommandHandler("passportnote", cmd_passport_note))
+    app.add_handler(CommandHandler("passport_note_del", cmd_passport_note_del))
+    app.add_handler(CommandHandler("passportnotedel", cmd_passport_note_del))
+    app.add_handler(CommandHandler("passport_note_delete", cmd_passport_note_del))
+    app.add_handler(CommandHandler("passportnotedelete", cmd_passport_note_del))
     app.add_handler(CommandHandler("passport_notes", cmd_passport_notes))
     app.add_handler(CommandHandler("passportnotes", cmd_passport_notes))
     app.add_handler(CommandHandler("matches", cmd_matches))

@@ -2,6 +2,7 @@
 
 * ``/passport [@username]``       — show passport card (photo).
 * ``/passport_note @username <t>``— leave a public note.
+* ``/passport_note_del <id>``     — delete your note (admins can delete any).
 * ``/passport_notes [@username]`` — list all notes for a player.
 """
 from __future__ import annotations
@@ -16,6 +17,8 @@ from telegram.ext import ContextTypes
 import database as db
 from database import (
     add_passport_note,
+    delete_passport_note,
+    get_passport_note,
     get_passport_notes,
     get_player,
     get_player_by_telegram_id,
@@ -23,7 +26,7 @@ from database import (
     player_title_strings,
 )
 from handlers._helpers import _player_from_user
-from handlers.common import mention, send
+from handlers.common import is_admin, mention, send
 
 log = logging.getLogger(__name__)
 
@@ -159,12 +162,48 @@ async def cmd_passport_note(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if len(note_text) > 500:
         note_text = note_text[:500]
 
-    add_passport_note(target["id"], author["id"], note_text)
+    note = add_passport_note(target["id"], author["id"], note_text)
+    note_id = note.get("id", "?")
     await send(
         update,
-        f"✅ Заметка для {mention(target['username'])} добавлена!\n"
+        f"✅ Заметка #{note_id} для {mention(target['username'])} добавлена!\n"
+        f"Удалить свою заметку: /passport_note_del {note_id}\n"
         f"📖 Все заметки: /passport_notes {mention(target['username'])}",
     )
+
+
+async def cmd_passport_note_del(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not ctx.args:
+        await send(update, "❌ Использование: /passport_note_del [id заметки]")
+        return
+
+    try:
+        note_id = int(ctx.args[0])
+    except (TypeError, ValueError):
+        await send(
+            update,
+            "❌ ID заметки должен быть числом. Например: /passport_note_del 12",
+        )
+        return
+
+    note = get_passport_note(note_id)
+    if not note:
+        await send(update, f"❌ Заметка #{note_id} не найдена.")
+        return
+
+    author = _player_from_user(update.effective_user)
+    user_id = update.effective_user.id if update.effective_user else None
+    is_author = bool(author and int(author["id"]) == int(note["author_id"]))
+    can_delete = is_author or is_admin(user_id)
+    if not can_delete:
+        await send(update, "❌ Удалить заметку может только её автор или админ.")
+        return
+
+    if not delete_passport_note(note_id):
+        await send(update, f"❌ Заметка #{note_id} уже удалена или не найдена.")
+        return
+
+    await send(update, f"🗑 Заметка #{note_id} удалена.")
 
 
 async def cmd_passport_notes(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -187,8 +226,9 @@ async def cmd_passport_notes(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         au = html.escape(n.get("author_username") or "?")
         nt = html.escape(n.get("note_text") or "")
         from_ = f"@{au}" if au else "—"
-        lines.append(f"💬 {nt}\n   — {from_}")
+        lines.append(f"#{n['id']} 💬 {nt}\n   — {from_}")
     lines.append("━━━━━━━━━━━━━━━━")
     lines.append("📝 Оставить: /passport_note @username [текст]")
+    lines.append("🗑 Удалить свою: /passport_note_del [id]")
 
     await send(update, "\n".join(lines))
