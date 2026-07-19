@@ -355,6 +355,11 @@ from handlers.profile import (  # noqa: E402
     cmd_setnick,
     cmd_show_keyboard,
 )
+from handlers.passport import (  # noqa: E402
+    cmd_passport,
+    cmd_passport_note,
+    cmd_passport_notes,
+)
 from handlers.rich_extra import (  # noqa: E402
     cmd_final_post_rich,
     cmd_match_card,
@@ -7988,6 +7993,11 @@ def main():
     app.add_handler(CommandHandler("setgoals", cmd_edit_goals))
     app.add_handler(CommandHandler("leaderboard", cmd_leaderboard))
     app.add_handler(CommandHandler("profile", cmd_profile))
+    app.add_handler(CommandHandler("passport", cmd_passport))
+    app.add_handler(CommandHandler("passport_note", cmd_passport_note))
+    app.add_handler(CommandHandler("passportnote", cmd_passport_note))
+    app.add_handler(CommandHandler("passport_notes", cmd_passport_notes))
+    app.add_handler(CommandHandler("passportnotes", cmd_passport_notes))
     app.add_handler(CommandHandler("matches", cmd_matches))
     app.add_handler(CommandHandler("walkover", cmd_walkover))
     app.add_handler(CommandHandler("walkover_match", cmd_walkover_match))

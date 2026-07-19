@@ -184,6 +184,9 @@ __all__ = [
     "count_tournament_winner_records",
     "get_tournament_winner_by_id",
     "delete_tournament_winner",
+    # Passport
+    "add_passport_note",
+    "get_passport_notes",
 ]
 
 
@@ -1273,6 +1276,24 @@ def init_db():
     c.execute(
         "CREATE INDEX IF NOT EXISTS idx_aliases_player "
         "ON player_aliases(player_id)"
+    )
+
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS passport_notes (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            target_id   INTEGER NOT NULL,
+            author_id   INTEGER NOT NULL,
+            note_text   TEXT    NOT NULL,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (target_id) REFERENCES players(id) ON DELETE CASCADE,
+            FOREIGN KEY (author_id) REFERENCES players(id) ON DELETE CASCADE
+        )
+        """
+    )
+    c.execute(
+        "CREATE INDEX IF NOT EXISTS idx_notes_target "
+        "ON passport_notes(target_id)"
     )
 
     conn.commit()
@@ -5449,6 +5470,40 @@ def list_top_reacted_jokes(
     params.append(n)
     conn = get_conn()
     rows = conn.execute(sql, tuple(params)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ── Passport ─────────────────────────────────────────────────────────────
+
+
+def add_passport_note(target_id: int, author_id: int, note_text: str) -> dict:
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO passport_notes (target_id, author_id, note_text) "
+        "VALUES (?, ?, ?)",
+        (int(target_id), int(author_id), str(note_text)[:500]),
+    )
+    row = c.execute(
+        "SELECT * FROM passport_notes WHERE id=?", (c.lastrowid,)
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return dict(row)
+
+
+def get_passport_notes(target_id: int, limit: int = 5) -> list[dict]:
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT n.*, a.username AS author_username, "
+        "COALESCE(a.game_nickname, a.username) AS author_nick "
+        "FROM passport_notes n "
+        "JOIN players a ON a.id = n.author_id "
+        "WHERE n.target_id=? "
+        "ORDER BY n.created_at DESC LIMIT ?",
+        (int(target_id), int(limit)),
+    ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
