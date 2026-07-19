@@ -627,6 +627,44 @@ def _publish_bombardiers_telegraph(
     return res.get("url")
 
 
+def _bombardiers_vs_fallback_lines(vs_data: list[dict], *, limit: int = 25) -> list[str]:
+    """Compact Telegram fallback when Telegra.ph is unavailable."""
+    if not vs_data:
+        return []
+
+    lines = ["\n🎯 <b>Кому забил</b>"]
+    for row in vs_data[:limit]:
+        scorer = mention(row.get("scorer_username"))
+        opponent = mention(row.get("opponent_username"))
+        raw_name = html.escape(str(row.get("raw_name") or "—"))
+        goals = int(row.get("goals") or 0)
+        lines.append(f"• {scorer} → {opponent}: {raw_name} — {goals} ⚽")
+    if len(vs_data) > limit:
+        lines.append(f"… ещё {len(vs_data) - limit} строк в полной базе")
+    return lines
+
+
+def _append_bombardiers_telegraph_or_fallback(
+    lines: list[str],
+    tg_url: str | None,
+    vs_data: list[dict],
+    *,
+    include_fallback: bool = True,
+) -> None:
+    if tg_url:
+        lines.append(
+            f'\n📊 <a href="{tg_url}">Полная статистика '
+            f'бомбардиров + кому забил</a>'
+        )
+        return
+    lines.append(
+        "\n⚠️ Telegraph сейчас не опубликовался, поэтому ссылки нет. "
+        "Проверь TELEGRAPH_TOKEN/доступ к api.telegra.ph в логах Railway."
+    )
+    if include_fallback:
+        lines.extend(_bombardiers_vs_fallback_lines(vs_data))
+
+
 async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """/tablebomb [ID|вса|ри] [text] — таблица бомбардиров одного турнира.
 
@@ -759,11 +797,9 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 t, rows, footballer_rows,
                 footballers_by_player, vs_data,
             )
-            if tg_url:
-                caption_parts.append(
-                    f'\n📊 <a href="{tg_url}">Полная статистика '
-                    f'бомбардиров + кому забил</a>'
-                )
+            _append_bombardiers_telegraph_or_fallback(
+                caption_parts, tg_url, vs_data, include_fallback=False,
+            )
             # Append footer
             _tb_footer = get_random_footer(t, FOOTER_CTX_TABLE)
             if _tb_footer:
@@ -795,11 +831,9 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         f"\n<blockquote expandable>"
                         f"{chr(10).join(detail_lines)}</blockquote>"
                     )
-                if tg_url:
-                    full_lines.append(
-                        f'\n📊 <a href="{tg_url}">Полная статистика '
-                        f'бомбардиров + кому забил</a>'
-                    )
+                _append_bombardiers_telegraph_or_fallback(
+                    full_lines, tg_url, vs_data,
+                )
                 _tb_footer3 = get_random_footer(t, FOOTER_CTX_TABLE)
                 if _tb_footer3:
                     full_lines.append(_tb_footer3)
@@ -808,23 +842,22 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 # If even the separate message is too long for Telegram
                 # (4096 char limit), publish full stats to Telegraph
                 if len(full_text) > 4000:
-                    if tg_url:
-                        short_msg = list(header)
-                        # Include top-5 in Telegram as a teaser
-                        if detail_lines:
-                            teaser = "\n".join(detail_lines[:5])
-                            short_msg.append(
-                                f"\n<blockquote expandable>"
-                                f"{teaser}\n…</blockquote>"
-                            )
+                    short_msg = list(header)
+                    # Include top-5 in Telegram as a teaser
+                    if detail_lines:
+                        teaser = "\n".join(detail_lines[:5])
                         short_msg.append(
-                            f'\n📊 <a href="{tg_url}">Полная статистика '
-                            f'бомбардиров + кому забил</a>'
+                            f"\n<blockquote expandable>"
+                            f"{teaser}\n…</blockquote>"
                         )
-                        if _tb_footer3:
-                            short_msg.append(_tb_footer3)
-                        await send(update, "\n".join(short_msg))
-                        return
+                    _append_bombardiers_telegraph_or_fallback(
+                        short_msg, tg_url, vs_data,
+                        include_fallback=(tg_url is None),
+                    )
+                    if _tb_footer3:
+                        short_msg.append(_tb_footer3)
+                    await send(update, "\n".join(short_msg))
+                    return
 
                 await send(update, full_text)
                 return
@@ -844,11 +877,7 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             t, rows, footballer_rows,
             footballers_by_player, vs_data,
         )
-    if tg_url:
-        lines.append(
-            f'\n📊 <a href="{tg_url}">Полная статистика '
-            f'бомбардиров + кому забил</a>'
-        )
+    _append_bombardiers_telegraph_or_fallback(lines, tg_url, vs_data)
     _tb_footer2 = get_random_footer(t, FOOTER_CTX_TABLE)
     if _tb_footer2:
         lines.append(_tb_footer2)
@@ -857,24 +886,23 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # If text exceeds Telegram limit, publish to Telegraph
     if len(full_text) > 4000:
-        if tg_url:
-            short_msg = list(header)
-            if detail_lines:
-                teaser = "\n".join(detail_lines[:5])
-                short_msg.append(
-                    f"\n<blockquote expandable>{teaser}\n…</blockquote>"
-                )
+        short_msg = list(header)
+        if detail_lines:
+            teaser = "\n".join(detail_lines[:5])
             short_msg.append(
-                f'\n📊 <a href="{tg_url}">Полная статистика '
-                f'бомбардиров + кому забил</a>'
+                f"\n<blockquote expandable>{teaser}\n…</blockquote>"
             )
-            if _tb_footer2:
-                short_msg.append(_tb_footer2)
-            try:
-                await send(update, "\n".join(short_msg))
-            except Exception:
-                pass
-            return
+        _append_bombardiers_telegraph_or_fallback(
+            short_msg, tg_url, vs_data,
+            include_fallback=(tg_url is None),
+        )
+        if _tb_footer2:
+            short_msg.append(_tb_footer2)
+        try:
+            await send(update, "\n".join(short_msg))
+        except Exception:
+            pass
+        return
 
     try:
         await send(update, full_text)
