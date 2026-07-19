@@ -161,7 +161,13 @@ def render_passport_png(
     d_ = int(player.get("draws") or 0)
     gf = int(player.get("goals_scored") or 0)
     ga = int(player.get("goals_conceded") or 0)
-    reg = (player.get("registered_at") or "")[:10]
+    raw_reg = player.get("registered_at")
+    if isinstance(raw_reg, str):
+        reg = raw_reg[:10]
+    elif hasattr(raw_reg, "strftime"):
+        reg = raw_reg.strftime("%Y-%m-%d")
+    else:
+        reg = str(raw_reg or "")[:10]
 
     img = Image.new("RGB", (w, h), BG)
     draw = ImageDraw.Draw(img)
