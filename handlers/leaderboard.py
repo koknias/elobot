@@ -785,8 +785,8 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             photo = BytesIO(png_bytes)
             photo.name = "tablebomb.png"
 
-            # Caption is capped at 1024 chars. Keep the Telegraph/fallback
-            # status in a separate message so it cannot disappear there.
+            # Telegram photo captions are capped at 1024 chars. Keep the
+            # link in the same caption when it fits; split only when needed.
             caption_parts = list(header)
             if detail_lines:
                 details_text = "\n".join(detail_lines)
@@ -798,16 +798,24 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 t, rows, footballer_rows,
                 footballers_by_player, vs_data,
             )
-            # Append footer
-            _tb_footer = get_random_footer(t, FOOTER_CTX_TABLE)
-            if _tb_footer:
-                caption_parts.append(_tb_footer)
-            caption_text = "\n".join(caption_parts)
-
             link_lines: list[str] = []
             _append_bombardiers_telegraph_or_fallback(
                 link_lines, tg_url, vs_data, include_fallback=(tg_url is None),
             )
+            link_text = "\n".join(link_lines)
+            _tb_footer = get_random_footer(t, FOOTER_CTX_TABLE)
+
+            caption_with_link = list(caption_parts)
+            caption_with_link.extend(link_lines)
+            if _tb_footer:
+                caption_with_link.append(_tb_footer)
+            caption_text = "\n".join(caption_with_link)
+
+            if len(caption_text) > 1024:
+                caption_without_link = list(caption_parts)
+                if _tb_footer:
+                    caption_without_link.append(_tb_footer)
+                caption_text = "\n".join(caption_without_link)
 
             # Telegram caption limit is 1024 chars — if over, truncate
             # the blockquote content and fall back to separate message.
@@ -817,7 +825,8 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     caption=caption_text,
                     parse_mode="HTML",
                 )
-                await send(update, "\n".join(link_lines))
+                if link_text not in caption_text:
+                    await send(update, link_text)
                 return
             else:
                 # Caption too long — send photo with short caption,
@@ -828,7 +837,7 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     caption=short_caption,
                     parse_mode="HTML",
                 )
-                await send(update, "\n".join(link_lines))
+                await send(update, link_text)
                 # Build full details text
                 full_lines = list(header)
                 if detail_lines:
