@@ -1,6 +1,7 @@
 """Паспорт Гвардиолыча — player passport cards with notes and trophies.
 
 * ``/passport [@username]``       — show passport card (photo).
+* ``/passport_surname <text>``    — set/clear surname on the passport book.
 * ``/passport_note @username <t>``— leave a public note.
 * ``/passport_note_del <id>``     — delete your note (admins can delete any).
 * ``/passport_notes [@username]`` — list all notes for a player.
@@ -24,6 +25,7 @@ from database import (
     get_player_by_telegram_id,
     get_titles_for_player,
     player_title_strings,
+    set_passport_surname,
 )
 from handlers._helpers import _player_from_user
 from handlers.common import is_admin, mention, send
@@ -118,6 +120,7 @@ async def cmd_passport(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"{emoji} {label} {mention(p['username'])}"
         f"{' (' + html.escape(p['game_nickname']) + ')' if p.get('game_nickname') else ''}\n"
         f"━━━━━━━━━━━━━━━━\n"
+        f"🪪 Фамилия: /passport_surname [текст]\n"
         f"📝 Оставить заметку: /passport_note {mention(p['username'])} [текст]\n"
         f"📖 Все заметки: /passport_notes {mention(p['username'])}"
     )
@@ -137,6 +140,31 @@ async def cmd_passport_mafia(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_passport_mclovin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.args = (ctx.args or []) + ["mclovin"]  # type: ignore[attr-defined]
     await cmd_passport(update, ctx)
+
+
+async def cmd_passport_surname(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    p = _player_from_user(update.effective_user)
+    if not p:
+        await send(update, "❌ Ты не зарегистрирован. Используй /register.")
+        return
+
+    raw = " ".join(ctx.args or []).strip()
+    if not raw:
+        current = p.get("passport_surname") or "пусто"
+        await send(
+            update,
+            "Использование: /passport_surname [фамилия]\n"
+            "Очистить: /passport_surname -\n"
+            f"Сейчас: {html.escape(current)}",
+        )
+        return
+
+    surname = "" if raw in ("-", "—", "clear", "очистить") else raw[:40]
+    set_passport_surname(p["id"], surname)
+    if surname:
+        await send(update, f"✅ Фамилия в паспорте: {html.escape(surname)}")
+    else:
+        await send(update, "✅ Фамилия в паспорте очищена.")
 
 
 async def cmd_passport_note(update: Update, ctx: ContextTypes.DEFAULT_TYPE):

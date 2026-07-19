@@ -45,6 +45,7 @@ __all__ = [
     "get_all_players",
     "update_player_stats",
     "set_game_nickname",
+    "set_passport_surname",
     "ban_player",
     "unban_player",
     "is_player_banned",
@@ -214,6 +215,7 @@ def init_db():
             username        TEXT NOT NULL UNIQUE,
             telegram_id     INTEGER UNIQUE,
             game_nickname   TEXT,
+            passport_surname TEXT,
             elo             REAL    DEFAULT {INITIAL_ELO},
             elo_vsa         REAL    DEFAULT {INITIAL_ELO},
             elo_ri          REAL    DEFAULT {INITIAL_ELO},
@@ -409,6 +411,8 @@ def init_db():
     # ── Lightweight migrations for older DBs ─────────────────────────────────
     if not _column_exists(conn, "players", "game_nickname"):
         c.execute("ALTER TABLE players ADD COLUMN game_nickname TEXT")
+    if not _column_exists(conn, "players", "passport_surname"):
+        c.execute("ALTER TABLE players ADD COLUMN passport_surname TEXT")
     if not _column_exists(conn, "players", "banned_until"):
         c.execute("ALTER TABLE players ADD COLUMN banned_until DATETIME")
     if not _column_exists(conn, "players", "banned_reason"):
@@ -2044,6 +2048,17 @@ def set_game_nickname(player_id: int, game_nickname: str):
     conn.execute(
         "UPDATE players SET game_nickname=? WHERE id=?",
         (game_nickname, player_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_passport_surname(player_id: int, surname: str | None):
+    conn = get_conn()
+    value = (surname or "").strip() or None
+    conn.execute(
+        "UPDATE players SET passport_surname=? WHERE id=?",
+        (value, player_id),
     )
     conn.commit()
     conn.close()

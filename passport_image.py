@@ -460,7 +460,7 @@ def _mrz_block(player: dict, pid: int) -> list[str]:
     doc = ascii_pad(f"GP{pid:05d}", 9)
     name = ascii_pad((player.get("game_nickname") or player.get("username") or "PLAYER"),
                      0)
-    surname = ascii_pad("GUARDIOLA", 0)
+    surname = ascii_pad(player.get("passport_surname") or "", 0)
     holder = f"{surname}<<{name}"
 
     line1 = f"{country}{doc}<<<<<<<<<<<<<<<"[:44]
@@ -487,6 +487,7 @@ def _render_passport_book_png(
     pid = player.get("id", 0)
     username = player.get("username", "unknown") or "unknown"
     game_nick = player.get("game_nickname") or ""
+    passport_surname = player.get("passport_surname") or ""
     elo = float(player.get("elo") or 0)
     w_ = int(player.get("wins") or 0)
     l_ = int(player.get("losses") or 0)
@@ -632,7 +633,7 @@ def _render_passport_book_png(
                              font=_font(v_font_size, bold=True), fill=PB_INK)
         return y + _s(34)
 
-    fy = _field("SURNAME / ФАМИЛИЯ", "GUARDIOLA", fy)
+    fy = _field("SURNAME / ФАМИЛИЯ", passport_surname, fy)
     fy = _field("GIVEN NAMES / ИМЯ", game_nick or username, fy)
     fy = _field("NATIONALITY / ГРАЖДАНСТВО", "GUARDIOLA LEAGUE", fy,
                 v_font_size=_s(11))
