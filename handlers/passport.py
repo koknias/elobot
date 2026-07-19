@@ -44,14 +44,21 @@ async def _download_avatar(user_id: int, ctx: ContextTypes.DEFAULT_TYPE) -> byte
 def _resolve_player_arg_or_user(
     args: list[str],
     update: Update,
-) -> dict | None:
+) -> tuple[dict | None, str]:
+    style = "default"
     if args:
         uname = args[0].lstrip("@").lower()
+        if uname in ("mafia", "криминал", "мактрахер"):
+            p = _player_from_user(update.effective_user)
+            style = "mafia"
+            return p, style
         p = get_player(uname)
         if not p:
-            return None
-        return p
-    return _player_from_user(update.effective_user)
+            return None, style
+        if len(args) > 1 and args[1].lower() in ("mafia", "криминал", "мактрахер"):
+            style = "mafia"
+        return p, style
+    return _player_from_user(update.effective_user), style
 
 
 def _build_trophy_counts(player_id: int) -> dict[str, int]:
@@ -65,29 +72,27 @@ def _build_trophy_counts(player_id: int) -> dict[str, int]:
 # ── commands ─────────────────────────────────────────────────────────────────
 
 async def cmd_passport(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    p = _resolve_player_arg_or_user(ctx.args, update)
+    p, style = _resolve_player_arg_or_user(ctx.args, update)
     if not p:
-        await send(update, "❌ Игрок не найден.\nИспользование: /passport [@username]")
+        await send(update, "❌ Игрок не найден.\nИспользование: /passport [@username]\n/mafia [@username] — криминальный паспорт")
         return
 
     from passport_image import render_passport_png
 
-    # Build data
     trophy_counts = _build_trophy_counts(p["id"])
     titles = player_title_strings(p["id"])
     notes = get_passport_notes(p["id"], limit=3)
 
-    # Download avatar
     tid = p.get("telegram_id")
     avatar_bytes = None
     if tid:
         avatar_bytes = await _download_avatar(int(tid), ctx)
 
-    # Render
     try:
         png_bytes = render_passport_png(
             p, trophy_counts, titles, notes,
             avatar_bytes=avatar_bytes,
+            style=style,
         )
     except Exception as exc:
         log.exception("passport render failed for player %s: %s", p["id"], exc)
@@ -97,8 +102,10 @@ async def cmd_passport(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     photo = BytesIO(png_bytes)
     photo.name = "passport.png"
 
+    emoji = "📋" if style == "default" else "🚨"
+    label = "Паспорт" if style == "default" else "Криминальный паспорт"
     caption = (
-        f"📋 Паспорт {mention(p['username'])}"
+        f"{emoji} {label} {mention(p['username'])}"
         f"{' (' + html.escape(p['game_nickname']) + ')' if p.get('game_nickname') else ''}\n"
         f"━━━━━━━━━━━━━━━━\n"
         f"📝 Оставить заметку: /passport_note {mention(p['username'])} [текст]\n"
@@ -110,6 +117,11 @@ async def cmd_passport(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         caption=caption,
         parse_mode="HTML",
     )
+
+
+async def cmd_passport_mafia(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    ctx.args = (ctx.args or []) + ["mafia"]  # type: ignore[attr-defined]
+    await cmd_passport(update, ctx)
 
 
 async def cmd_passport_note(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -144,7 +156,7 @@ async def cmd_passport_note(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_passport_notes(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    p = _resolve_player_arg_or_user(ctx.args, update)
+    p, _style = _resolve_player_arg_or_user(ctx.args, update)
     if not p:
         await send(update, "❌ Игрок не найден.\nИспользование: /passport_notes [@username]")
         return

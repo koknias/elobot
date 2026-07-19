@@ -357,6 +357,7 @@ from handlers.profile import (  # noqa: E402
 )
 from handlers.passport import (  # noqa: E402
     cmd_passport,
+    cmd_passport_mafia,
     cmd_passport_note,
     cmd_passport_notes,
 )
@@ -7994,6 +7995,9 @@ def main():
     app.add_handler(CommandHandler("leaderboard", cmd_leaderboard))
     app.add_handler(CommandHandler("profile", cmd_profile))
     app.add_handler(CommandHandler("passport", cmd_passport))
+    app.add_handler(CommandHandler("mafia", cmd_passport_mafia))
+    app.add_handler(CommandHandler("passport_mafia", cmd_passport_mafia))
+    app.add_handler(CommandHandler("passportmafia", cmd_passport_mafia))
     app.add_handler(CommandHandler("passport_note", cmd_passport_note))
     app.add_handler(CommandHandler("passportnote", cmd_passport_note))
     app.add_handler(CommandHandler("passport_notes", cmd_passport_notes))
