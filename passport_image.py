@@ -146,7 +146,7 @@ def render_passport_png(
     titles: list[str],
     notes: list[dict],
     avatar_bytes: bytes | None = None,
-    style: str = "default",
+    style: str = "mclovin",
 ) -> bytes:
     if style in ("mafia", "mclovin"):
         return _render_passport_mafia_png(
@@ -387,14 +387,16 @@ def _render_passport_mafia_png(
 
     total_trophies = sum(trophy_counts.values())
 
-    img = Image.new("RGB", (w, h), (10, 10, 14))
+    img = make_canvas(w, h, bg_color=(10, 10, 14),
+                      bg_image_path="assets/passport_bg.jpg",
+                      overlay_alpha=120)
     draw = ImageDraw.Draw(img)
 
     # ── Card body with gradient top bar ───────────────────────────────────
     cx = _s(12)
     cy_card = _s(12)
     _draw_rounded_rect(img, draw, cx, cy_card, CARD_W, CARD_H,
-                       radius=_s(16), fill=ML_CARD_BG)
+                       radius=_s(16), fill=ML_CARD_BG, alpha=215)
     # Blue gradient top band
     bar_h = _s(90)
     _draw_gradient_bar(img, cy_card, bar_h, ML_BG_TOP, ML_BG_BOT)
