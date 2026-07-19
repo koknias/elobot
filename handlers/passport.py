@@ -77,7 +77,7 @@ def _build_trophy_counts(player_id: int) -> dict[str, int]:
 async def cmd_passport(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     p, style = _resolve_player_arg_or_user(ctx.args, update)
     if not p:
-        await send(update, "❌ Игрок не найден.\n/passport [@user] — обычный\n/mafia [@user] — мактрахер\n/mclovin [@user] — mclovin style")
+        await send(update, "❌ Игрок не найден.\n/passport [@user] — паспорт-книжка\n/mafia [@user] — мактрахер\n/mclovin [@user] — mclovin style")
         return
 
     from passport_image import render_passport_png
@@ -106,7 +106,7 @@ async def cmd_passport(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     photo.name = "passport.png"
 
     if style == "default":
-        emoji, label = "📋", "Паспорт"
+        emoji, label = "📕", "Паспорт"
     elif style == "mafia":
         emoji, label = "🚨", "Криминальный паспорт"
     else:

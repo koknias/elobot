@@ -2,11 +2,18 @@
 Render a "Паспорт Гвардиолыча" (Guardiola's Passport) player card as PNG.
 
 Public entry point: ``render_passport_png(player, trophy_counts, titles, notes,
-avatar_bytes) -> bytes``
+avatar_bytes, style) -> bytes``
+
+Styles:
+  * ``default`` / ``book`` — паспорт-книжка (базовый стиль, используется по
+    умолчанию командой ``/passport``): бордовая обложка с золотым гербом,
+    фото в рамке, поля как у настоящего паспорта и машиночитаемая зона MRZ.
+  * ``mafia`` / ``mclovin`` — горизонтальная ID-карта в стиле McLovin.
 """
 from __future__ import annotations
 
 import os as _os
+import re
 from io import BytesIO
 
 from PIL import Image, ImageDraw, ImageFont
@@ -146,18 +153,22 @@ def render_passport_png(
     titles: list[str],
     notes: list[dict],
     avatar_bytes: bytes | None = None,
-    style: str = "mclovin",
+    style: str = "book",
 ) -> bytes:
     if style in ("mafia", "mclovin"):
         return _render_passport_mafia_png(
             player, trophy_counts, titles, notes, avatar_bytes,
         )
-    return _render_passport_default_png(
+    if style == "card":
+        return _render_passport_card_png(
+            player, trophy_counts, titles, notes, avatar_bytes,
+        )
+    return _render_passport_book_png(
         player, trophy_counts, titles, notes, avatar_bytes,
     )
 
 
-def _render_passport_default_png(
+def _render_passport_card_png(
     player: dict,
     trophy_counts: dict[str, int],
     titles: list[str],
@@ -330,6 +341,385 @@ def _render_passport_default_png(
     buf = BytesIO()
     img.save(buf, format="PNG", optimize=True)
     return buf.getvalue()
+
+
+# ── Passport-book style (базовый) ────────────────────────────────────────────
+# Классический паспорт-книжка: бордовая обложка с золотым гербом и тиснением,
+# страница с фото в овальной/прямоугольной рамке, полями как у настоящего
+# паспорта и машиночитаемой зоной (MRZ) в самом низу.
+
+PB_COVER     = (58, 30, 42)   # тёмный бордо обложки
+PB_COVER_DK  = (38, 18, 28)   # глубокая тень обложки
+PB_PAGE      = (246, 240, 226)  # тёплая бумажная страница
+PB_PAGE_DK   = (230, 222, 204)  # затенение страницы (корешок)
+PB_GOLD      = (212, 175, 55)  # золотое тиснение
+PB_GOLD_DK   = (160, 128, 35)
+PB_INK       = (48, 36, 36)    # цвет типографской краски
+PB_INK_SOFT  = (110, 88, 80)
+PB_FIELD_LBL = (120, 100, 90)
+PB_STAMP     = (150, 40, 40)   # красный штамп
+
+
+def _emboss_label(img: Image.Image,
+                  cx: int, y: int, text: str, *,
+                  font: ImageFont.ImageFont,
+                  fill: tuple,
+                  shadow: tuple | None = None) -> None:
+    """Imitation of gold letterpress: faint shadow + main fill."""
+    if shadow is not None:
+        tw = measure_text_with_emoji(text, font)
+        draw_text_with_emoji(img, (cx - tw // 2 + _s(1), y + _s(1)),
+                             text, font=font, fill=shadow)
+    _draw_centered(img, cx, y, text, font=font, fill=fill)
+
+
+def _book_emblem(img: Image.Image, cx: int, cy: int, r: int) -> None:
+    """Условный герб: круг + внутренний ромб + звезда (без внешних зависимостей)."""
+    draw = ImageDraw.Draw(img)
+    # Внешнее золотое кольцо
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r],
+                 outline=PB_GOLD, width=_s(3))
+    # Внутренний ромб (щит)
+    rh = int(r * 0.62)
+    draw.polygon([(cx, cy - rh), (cx + rh, cy),
+                  (cx, cy + rh), (cx - rh, cy)],
+                 outline=PB_GOLD, width=_s(2))
+    # Звезда по центру
+    _draw_star(draw, cx, cy, int(r * 0.42), points=5,
+               fill=PB_GOLD, outline=PB_GOLD_DK)
+
+
+def _draw_star(draw: ImageDraw.ImageDraw,
+               cx: int, cy: int, r: int, *,
+               points: int = 5,
+               fill: tuple = PB_GOLD,
+               outline: tuple | None = None) -> None:
+    import math
+    pts = []
+    for i in range(points * 2):
+        angle = -math.pi / 2 + i * math.pi / points
+        radius = r if i % 2 == 0 else r * 0.45
+        pts.append((cx + math.cos(angle) * radius,
+                    cy + math.sin(angle) * radius))
+    draw.polygon(pts, fill=fill, outline=outline)
+
+
+def _mrz_block(player: dict, pid: int) -> list[str]:
+    """Две строки машиночитаемой зоны (ICAO-подобный формат, безопасный для PIL)."""
+    def ascii_pad(s: str, n: int) -> str:
+        s = re.sub(r"[^A-Z0-9<]", "<", (s or "").upper())
+        return (s + "<" * n)[:n]
+
+    country = "GL"            # GUARDIOLA LEAGUE
+    doc = ascii_pad(f"GP{pid:05d}", 9)
+    name = ascii_pad((player.get("game_nickname") or player.get("username") or "PLAYER"),
+                     0)
+    surname = ascii_pad("GUARDIOLA", 0)
+    holder = f"{surname}<<{name}"
+
+    line1 = f"{country}{doc}<<<<<<<<<<<<<<<"[:44]
+    line2 = (ascii_pad("", 0) + "<<" + holder + "<<<<<<<<<<<<<<<<<<<<<<<<")[:44]
+    # Гарантируем ровно 44 символа в каждой строке.
+    line1 = (line1 + "<" * 44)[:44]
+    line2 = (line2 + "<" * 44)[:44]
+    return [line1, line2]
+
+
+def _render_passport_book_png(
+    player: dict,
+    trophy_counts: dict[str, int],
+    titles: list[str],
+    notes: list[dict],
+    avatar_bytes: bytes | None = None,
+) -> bytes:
+    """Базовый стиль — паспорт-книжка с обложкой и разворотом страницы."""
+    CARD_W = _s(760)
+    CARD_H = _s(540)
+    w = CARD_W + _s(24)
+    h = CARD_H + _s(24)
+
+    pid = player.get("id", 0)
+    username = player.get("username", "unknown") or "unknown"
+    game_nick = player.get("game_nickname") or ""
+    elo = float(player.get("elo") or 0)
+    w_ = int(player.get("wins") or 0)
+    l_ = int(player.get("losses") or 0)
+    d_ = int(player.get("draws") or 0)
+    gf = int(player.get("goals_scored") or 0)
+    ga = int(player.get("goals_conceded") or 0)
+    raw_reg = player.get("registered_at")
+    if isinstance(raw_reg, str):
+        reg = raw_reg[:10]
+    elif hasattr(raw_reg, "strftime"):
+        reg = raw_reg.strftime("%Y-%m-%d")
+    else:
+        reg = str(raw_reg or "")[:10]
+
+    total_trophies = sum(trophy_counts.values())
+
+    img = Image.new("RGB", (w, h), (24, 22, 22))
+    draw = ImageDraw.Draw(img)
+
+    ox = _s(12)
+    oy = _s(12)
+
+    # ── Обложка (левая страница) ─────────────────────────────────────────
+    cover_w = CARD_W // 2 - _s(6)
+    cover_x = ox
+    cover_y = oy
+    _draw_rounded_rect(img, draw, cover_x, cover_y, cover_w, CARD_H,
+                       radius=_s(10), fill=PB_COVER)
+    # Текстура: тонкие диагональные линии для «бархата»
+    for i in range(-CARD_H, cover_w, _s(8)):
+        draw.line([(cover_x + i, cover_y),
+                   (cover_x + i + CARD_H, cover_y + CARD_H)],
+                  fill=PB_COVER_DK, width=1)
+
+    # Внутренняя золотая рамка обложки
+    inset = _s(14)
+    draw.rounded_rectangle(
+        [cover_x + inset, cover_y + inset,
+         cover_x + cover_w - inset, cover_y + CARD_H - inset],
+        radius=_s(6), outline=PB_GOLD, width=_s(2))
+    draw.rounded_rectangle(
+        [cover_x + inset + _s(4), cover_y + inset + _s(4),
+         cover_x + cover_w - inset - _s(4), cover_y + CARD_H - inset - _s(4)],
+        radius=_s(4), outline=PB_GOLD_DK, width=1)
+
+    cover_cx = cover_x + cover_w // 2
+    # Герб
+    _book_emblem(img, cover_cx, cover_y + _s(110), _s(42))
+    # Надписи на обложке
+    cover_title_f = _font(_s(26), bold=True)
+    _emboss_label(img, cover_cx, cover_y + _s(180), "GUARDIOLA",
+                  font=cover_title_f, fill=PB_GOLD, shadow=PB_GOLD_DK)
+    _emboss_label(img, cover_cx, cover_y + _s(212), "LEAGUE",
+                  font=cover_title_f, fill=PB_GOLD, shadow=PB_GOLD_DK)
+    sub_f = _font(_s(12), bold=False)
+    _draw_centered(img, cover_cx, cover_y + _s(246),
+                   "ПАСПОРТ ГВАРДИОЛЫЧА", font=sub_f, fill=PB_GOLD_DK)
+    _draw_centered(img, cover_cx, cover_y + _s(264),
+                   "FC MOBILE LEAGUE", font=_font(_s(10)), fill=PB_GOLD_DK)
+    _draw_centered(img, cover_cx, cover_y + _s(280),
+                   "OFFICIAL PLAYER PASSPORT", font=_font(_s(9)),
+                   fill=PB_GOLD_DK)
+
+    # Нижний блок обложки: номер документа
+    draw.line([(cover_x + inset + _s(20), cover_y + CARD_H - _s(78)),
+               (cover_x + cover_w - inset - _s(20), cover_y + CARD_H - _s(78))],
+              fill=PB_GOLD_DK, width=1)
+    _draw_centered(img, cover_cx, cover_y + CARD_H - _s(62),
+                   "PASSPORT • ПАСПОРТ", font=_font(_s(9)), fill=PB_GOLD_DK)
+    doc_str = f"№ GL{pid:05d}"
+    doc_f = _font(_s(18), bold=True)
+    _emboss_label(img, cover_cx, cover_y + CARD_H - _s(44), doc_str,
+                  font=doc_f, fill=PB_GOLD, shadow=PB_GOLD_DK)
+
+    # Тёмный «корешок» между страницами
+    spine_x = cover_x + cover_w
+    draw.rectangle([spine_x, cover_y, spine_x + _s(12), cover_y + CARD_H],
+                   fill=PB_COVER_DK)
+    for sx in range(_s(12)):
+        shade = 30 + int(20 * abs(sx - _s(6)) / max(_s(6), 1))
+        draw.line([(spine_x + sx, cover_y), (spine_x + sx, cover_y + CARD_H)],
+                  fill=(PB_COVER_DK[0] + shade,
+                        PB_COVER_DK[1] + shade,
+                        PB_COVER_DK[2] + shade))
+
+    # ── Страница (правая) ────────────────────────────────────────────────
+    page_x = spine_x + _s(12)
+    page_w = ox + CARD_W - page_x
+    page_y = oy
+    _draw_rounded_rect(img, draw, page_x, page_y, page_w, CARD_H,
+                       radius=_s(10), fill=PB_PAGE)
+    # Лёгкая тень от корешка на странице
+    for sx in range(_s(14)):
+        a = int(60 * (1 - sx / _s(14)))
+        _vline_alpha(img, page_x + sx, page_y, CARD_H, (0, 0, 0), a)
+
+    # Шапка страницы
+    head_f = _font(_s(13), bold=True)
+    _draw_centered(img, page_x + page_w // 2, page_y + _s(18),
+                   "GUARDIOLA LEAGUE", font=head_f, fill=PB_INK)
+    _draw_centered(img, page_x + page_w // 2, page_y + _s(34),
+                   "РЕСПУБЛИКА ГВАРДИОЛА • OFFICIAL ID",
+                   font=_font(_s(9)), fill=PB_INK_SOFT)
+    draw.line([(page_x + _s(20), page_y + _s(52)),
+               (page_x + page_w - _s(20), page_y + _s(52))],
+              fill=PB_GOLD_DK, width=1)
+
+    # ── Фото (слева на странице) в прямоугольной рамке ───────────────────
+    photo_x = page_x + _s(24)
+    photo_y = page_y + _s(68)
+    photo_w = _s(120)
+    photo_h = _s(150)
+    _draw_rounded_rect(img, draw, photo_x, photo_y, photo_w, photo_h,
+                       radius=_s(4), fill=(225, 220, 205))
+    draw.rectangle([photo_x, photo_y, photo_x + photo_w, photo_y + photo_h],
+                   outline=PB_INK, width=_s(2))
+    # Внутренняя золотая окантовка фото
+    draw.rectangle([photo_x + _s(2), photo_y + _s(2),
+                    photo_x + photo_w - _s(2), photo_y + photo_h - _s(2)],
+                   outline=PB_GOLD_DK, width=1)
+    av_r = min(photo_w, photo_h) // 2 - _s(8)
+    _draw_circle_avatar(img,
+                        photo_x + photo_w // 2,
+                        photo_y + photo_h // 2 - _s(4),
+                        av_r, avatar_bytes)
+    # Подпись под фото
+    _draw_centered(img, photo_x + photo_w // 2, photo_y + photo_h + _s(6),
+                   "PHOTO / ФОТО", font=_font(_s(8)), fill=PB_FIELD_LBL)
+
+    # ── Поля справа от фото ──────────────────────────────────────────────
+    fx = photo_x + photo_w + _s(22)
+    fy = photo_y
+    field_w = page_x + page_w - fx - _s(20)
+
+    def _field(label: str, value: str, y: int, *,
+               v_font_size: int = _s(13)) -> int:
+        draw_text_with_emoji(img, (fx, y), label,
+                             font=_font(_s(8), bold=True), fill=PB_FIELD_LBL)
+        draw.line([(fx, y + _s(22)), (fx + field_w, y + _s(22))],
+                  fill=PB_INK_SOFT, width=1)
+        vt = _trunc(value, _font(v_font_size, bold=True), field_w)
+        draw_text_with_emoji(img, (fx, y + _s(8)), vt,
+                             font=_font(v_font_size, bold=True), fill=PB_INK)
+        return y + _s(34)
+
+    fy = _field("SURNAME / ФАМИЛИЯ", "GUARDIOLA", fy)
+    fy = _field("GIVEN NAMES / ИМЯ", game_nick or username, fy)
+    fy = _field("NATIONALITY / ГРАЖДАНСТВО", "GUARDIOLA LEAGUE", fy,
+                v_font_size=_s(11))
+    fy = _field("PASSPORT № / НОМЕР", f"GL{pid:05d}", fy)
+
+    # ── Нижний блок страницы: статы + трофеи ─────────────────────────────
+    stat_y = photo_y + photo_h + _s(36)
+    draw.line([(page_x + _s(20), stat_y - _s(8)),
+               (page_x + page_w - _s(20), stat_y - _s(8))],
+              fill=PB_GOLD_DK, width=1)
+
+    stat_lbl_f = _font(_s(8), bold=True)
+    stat_val_f = _font(_s(15), bold=True)
+    cols = [
+        ("ELO", str(int(elo))),
+        ("W/L/D", f"{w_}/{l_}/{d_}"),
+        ("GF/GA", f"{gf}/{ga}"),
+        ("CUPS", str(total_trophies)),
+    ]
+    col_w = (page_w - _s(40)) // len(cols)
+    for i, (label, value) in enumerate(cols):
+        cx = page_x + _s(20) + col_w // 2 + col_w * i
+        _draw_centered(img, cx, stat_y, label,
+                       font=stat_lbl_f, fill=PB_FIELD_LBL)
+        _draw_centered(img, cx, stat_y + _s(14), value,
+                       font=stat_val_f, fill=PB_INK)
+
+    # Трофеи строкой
+    trop_y = stat_y + _s(44)
+    type_labels = {"main": "Чемпион", "vsa": "VSA",
+                   "fantasy": "Фэнтези", "supercup": "СК"}
+    trop_items = [(type_labels[t], trophy_counts.get(t, 0))
+                  for t in type_labels if trophy_counts.get(t, 0) > 0]
+    trop_str = "  •  ".join(f"{lbl} ×{c}" for lbl, c in trop_items) or "—"
+    draw_text_with_emoji(img, (page_x + _s(20), trop_y),
+                         "ТРОФЕИ / TROPHIES",
+                         font=_font(_s(8), bold=True), fill=PB_FIELD_LBL)
+    trop_val_f = _font(_s(11), bold=True)
+    tt = _trunc(trop_str, trop_val_f, page_w - _s(40))
+    draw_text_with_emoji(img, (page_x + _s(20), trop_y + _s(12)), tt,
+                         font=trop_val_f, fill=PB_INK)
+
+    # Звания
+    if titles:
+        badge_y = trop_y + _s(34)
+        draw_text_with_emoji(img, (page_x + _s(20), badge_y),
+                             "ЗВАНИЯ / BADGES",
+                             font=_font(_s(8), bold=True), fill=PB_FIELD_LBL)
+        b_font = _font(_s(10), bold=False)
+        bt = _trunc(" • ".join(titles[:5]), b_font, page_w - _s(40))
+        draw_text_with_emoji(img, (page_x + _s(20), badge_y + _s(12)), bt,
+                             font=b_font, fill=PB_INK)
+
+    # ── Заметки (мини-блок) + печать ─────────────────────────────────────
+    notes_y = page_y + CARD_H - _s(120)
+    # Заметки занимают левую часть, печать — правую; они не пересекаются.
+    notes_w = page_w - _s(40) - _s(80)
+    if notes:
+        n_font = _font(_s(9), bold=False)
+        _draw_centered(img, page_x + notes_w // 2 + _s(10), notes_y,
+                       "— ЗАМЕТКИ / NOTES —", font=_font(_s(8), bold=True),
+                       fill=PB_FIELD_LBL)
+        ny = notes_y + _s(12)
+        for note in notes[:2]:
+            au = note.get("author_username", "?") or "?"
+            nt = (note.get("note_text", "") or "")[:40]
+            line = f"“{nt}” — @{au}"
+            lt = _trunc(line, n_font, notes_w)
+            draw_text_with_emoji(img, (page_x + _s(20), ny), lt,
+                                 font=n_font, fill=PB_INK_SOFT)
+            ny += _s(14)
+
+    # Круглая «печать» в правой части страницы, на уровне заметок.
+    _draw_stamp(img, page_x + page_w - _s(48),
+                notes_y + _s(20), _s(26))
+
+    # ── Машиночитаемая зона (MRZ) ────────────────────────────────────────
+    mrz_lines = _mrz_block(player, pid)
+    mrz_y = page_y + CARD_H - _s(48)
+    draw.line([(page_x + _s(20), mrz_y - _s(6)),
+               (page_x + page_w - _s(20), mrz_y - _s(6))],
+              fill=PB_GOLD_DK, width=1)
+    # Шрифт подбираем так, чтобы 44 символа точно вошли в ширину страницы.
+    mrz_avail = page_w - _s(40)
+    mrz_f = _font(_s(9), bold=True)
+    mrz_line_h = _s(14)
+    # Подстраиваем размер вниз, если строка всё ещё шире доступной ширины.
+    for size in (_s(9), _s(8), _s(7)):
+        f = _font(size, bold=True)
+        if measure_text_with_emoji(mrz_lines[0], f) <= mrz_avail:
+            mrz_f, mrz_line_h = f, size + _s(4)
+            break
+    for i, line in enumerate(mrz_lines):
+        draw.text((page_x + _s(20), mrz_y + i * mrz_line_h), line,
+                  font=mrz_f, fill=PB_INK)
+
+    buf = BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
+def _vline_alpha(img: Image.Image, x: int, y: int, height: int,
+                 color: tuple, alpha: int) -> None:
+    """Вертикальная полупрозрачная линия (для мягких теней на странице)."""
+    if alpha <= 0:
+        return
+    overlay = Image.new("RGBA", (1, height), color + (alpha,))
+    img.paste(Image.alpha_composite(
+        img.crop((x, y, x + 1, y + height)).convert("RGBA"), overlay
+    ).convert("RGB"), (x, y))
+
+
+def _draw_stamp(img: Image.Image, cx: int, cy: int, r: int) -> None:
+    """Полупрозрачная круглая «печать» с надписью — эффект штампа approval."""
+    layer = Image.new("RGBA", (r * 2 + _s(8), r * 2 + _s(8)), (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    gcx = layer.width // 2
+    gcy = layer.height // 2
+    d.ellipse([gcx - r, gcy - r, gcx + r, gcy + r],
+              outline=PB_STAMP + (180,), width=_s(2))
+    d.ellipse([gcx - r + _s(4), gcy - r + _s(4),
+               gcx + r - _s(4), gcy + r - _s(4)],
+              outline=PB_STAMP + (140,), width=1)
+    f = _font(_s(8), bold=True)
+    txt = "APPROVED"
+    tw = measure_text_with_emoji(txt, f)
+    draw_text_with_emoji(layer, (gcx - tw // 2, gcy - _s(4)), txt,
+                         font=f, fill=PB_STAMP + (200,))
+    # Поворот для живости
+    layer = layer.rotate(-14, resample=Image.BICUBIC, expand=False)
+    img.paste(layer,
+              (cx - layer.width // 2, cy - layer.height // 2),
+              layer)
 
 
 # ── McLovin (mafia) style ─────────────────────────────────────────────────────
