@@ -148,7 +148,7 @@ def render_passport_png(
     avatar_bytes: bytes | None = None,
     style: str = "default",
 ) -> bytes:
-    if style == "mafia":
+    if style in ("mafia", "mclovin"):
         return _render_passport_mafia_png(
             player, trophy_counts, titles, notes, avatar_bytes,
         )
