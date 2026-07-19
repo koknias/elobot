@@ -374,17 +374,63 @@ def _emboss_label(img: Image.Image,
 
 
 def _book_emblem(img: Image.Image, cx: int, cy: int, r: int) -> None:
-    """Условный герб: круг + внутренний ромб + звезда (без внешних зависимостей)."""
+    """Герб на обложке: настоящая эмблема лиги в круглом золотом медальоне,
+    либо (если файл эмблемы недоступен) запасной рисованный герб."""
+    emblem = _load_emblem()
+    if emblem is None:
+        _book_emblem_fallback(img, cx, cy, r)
+        return
+    # Вписываем квадратную эмблему в круг радиуса r, оставляя золотое кольцо.
+    inner_r = r - _s(4)
+    diam = inner_r * 2
+    medallion = emblem.resize((diam, diam), Image.LANCZOS)
+    # Круглая маска со сглаженным краем
+    mask = Image.new("L", (diam, diam), 0)
+    ImageDraw.Draw(mask).ellipse([0, 0, diam - 1, diam - 1], fill=255)
+    medallion.putalpha(mask)
+    img.paste(medallion, (cx - inner_r, cy - inner_r), medallion)
+    # Внешнее золотое кольцо-кант
     draw = ImageDraw.Draw(img)
-    # Внешнее золотое кольцо
+    draw.ellipse([cx - r, cy - r, cx + r - 1, cy + r - 1],
+                 outline=PB_GOLD, width=_s(3))
+    draw.ellipse([cx - r + _s(2), cy - r + _s(2),
+                  cx + r - _s(2) - 1, cy + r - _s(2) - 1],
+                 outline=PB_GOLD_DK, width=1)
+
+
+_EMBLEM_CACHE: Image.Image | None = None
+_EMBLEM_TRIED = False
+
+
+def _load_emblem() -> Image.Image | None:
+    """Центральный квадратный кроп эмблемы лиги (RGBA). Кэшируется."""
+    global _EMBLEM_CACHE, _EMBLEM_TRIED
+    if _EMBLEM_TRIED:
+        return _EMBLEM_CACHE
+    _EMBLEM_TRIED = True
+    path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                         "assets", "gvardiol_emblem.png")
+    try:
+        with Image.open(path) as src:
+            src = src.convert("RGB")
+        w, h = src.size
+        s = min(w, h)
+        left, top = (w - s) // 2, (h - s) // 2
+        _EMBLEM_CACHE = src.crop((left, top, left + s, top + s))
+    except Exception:
+        _EMBLEM_CACHE = None
+    return _EMBLEM_CACHE
+
+
+def _book_emblem_fallback(img: Image.Image, cx: int, cy: int, r: int) -> None:
+    """Запасной герб, если файл эмблемы недоступен: круг + ромб + звезда."""
+    draw = ImageDraw.Draw(img)
     draw.ellipse([cx - r, cy - r, cx + r, cy + r],
                  outline=PB_GOLD, width=_s(3))
-    # Внутренний ромб (щит)
     rh = int(r * 0.62)
     draw.polygon([(cx, cy - rh), (cx + rh, cy),
                   (cx, cy + rh), (cx - rh, cy)],
                  outline=PB_GOLD, width=_s(2))
-    # Звезда по центру
     _draw_star(draw, cx, cy, int(r * 0.42), points=5,
                fill=PB_GOLD, outline=PB_GOLD_DK)
 
