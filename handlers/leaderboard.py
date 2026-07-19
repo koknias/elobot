@@ -785,7 +785,8 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             photo = BytesIO(png_bytes)
             photo.name = "tablebomb.png"
 
-            # Caption: header + expandable blockquote with full details
+            # Caption is capped at 1024 chars. Keep the Telegraph/fallback
+            # status in a separate message so it cannot disappear there.
             caption_parts = list(header)
             if detail_lines:
                 details_text = "\n".join(detail_lines)
@@ -797,14 +798,16 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 t, rows, footballer_rows,
                 footballers_by_player, vs_data,
             )
-            _append_bombardiers_telegraph_or_fallback(
-                caption_parts, tg_url, vs_data, include_fallback=False,
-            )
             # Append footer
             _tb_footer = get_random_footer(t, FOOTER_CTX_TABLE)
             if _tb_footer:
                 caption_parts.append(_tb_footer)
             caption_text = "\n".join(caption_parts)
+
+            link_lines: list[str] = []
+            _append_bombardiers_telegraph_or_fallback(
+                link_lines, tg_url, vs_data, include_fallback=(tg_url is None),
+            )
 
             # Telegram caption limit is 1024 chars — if over, truncate
             # the blockquote content and fall back to separate message.
@@ -814,6 +817,7 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     caption=caption_text,
                     parse_mode="HTML",
                 )
+                await send(update, "\n".join(link_lines))
                 return
             else:
                 # Caption too long — send photo with short caption,
@@ -824,6 +828,7 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     caption=short_caption,
                     parse_mode="HTML",
                 )
+                await send(update, "\n".join(link_lines))
                 # Build full details text
                 full_lines = list(header)
                 if detail_lines:
@@ -831,9 +836,6 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         f"\n<blockquote expandable>"
                         f"{chr(10).join(detail_lines)}</blockquote>"
                     )
-                _append_bombardiers_telegraph_or_fallback(
-                    full_lines, tg_url, vs_data,
-                )
                 _tb_footer3 = get_random_footer(t, FOOTER_CTX_TABLE)
                 if _tb_footer3:
                     full_lines.append(_tb_footer3)
@@ -850,10 +852,6 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             f"\n<blockquote expandable>"
                             f"{teaser}\n…</blockquote>"
                         )
-                    _append_bombardiers_telegraph_or_fallback(
-                        short_msg, tg_url, vs_data,
-                        include_fallback=(tg_url is None),
-                    )
                     if _tb_footer3:
                         short_msg.append(_tb_footer3)
                     await send(update, "\n".join(short_msg))
