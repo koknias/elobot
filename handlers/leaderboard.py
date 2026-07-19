@@ -778,106 +778,52 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             for fname, fgoals in flist:
                 detail_lines.append(f"    ⚽ {html.escape(fname)} — {fgoals}")
 
-    # ── Send as single message: photo + caption with expandable text ────
+    # ── Send as single message: photo + header + link → Telegraph ────────
+    # All per-player scorer detail goes to Telegraph only; caption has just
+    # the leaderboard summary, a footer, and a link to the full page.
     if not text_mode and footballer_rows:
         try:
             png_bytes = render_tablebomb_png(footballer_rows, tournament=t)
             photo = BytesIO(png_bytes)
             photo.name = "tablebomb.png"
 
-            # Telegram photo captions are capped at 1024 chars. Keep the
-            # link in the same caption when it fits; split only when needed.
-            caption_parts = list(header)
-            if detail_lines:
-                details_text = "\n".join(detail_lines)
-                caption_parts.append(
-                    f"\n<blockquote expandable>{details_text}</blockquote>"
-                )
             vs_data = get_goals_vs_opponents_for_tournament(t["id"])
             tg_url = _publish_bombardiers_telegraph(
                 t, rows, footballer_rows,
                 footballers_by_player, vs_data,
             )
+
+            caption_parts = list(header)
             link_lines: list[str] = []
             _append_bombardiers_telegraph_or_fallback(
                 link_lines, tg_url, vs_data, include_fallback=(tg_url is None),
             )
-            link_text = "\n".join(link_lines)
+            caption_parts.extend(link_lines)
             _tb_footer = get_random_footer(t, FOOTER_CTX_TABLE)
-
-            caption_with_link = list(caption_parts)
-            caption_with_link.extend(link_lines)
             if _tb_footer:
-                caption_with_link.append(_tb_footer)
-            caption_text = "\n".join(caption_with_link)
+                caption_parts.append(_tb_footer)
+            caption_text = "\n".join(caption_parts)
 
+            # Safety net — should never trigger now that detail_lines is
+            # excluded from the caption.
             if len(caption_text) > 1024:
-                caption_without_link = list(caption_parts)
-                if _tb_footer:
-                    caption_without_link.append(_tb_footer)
-                caption_text = "\n".join(caption_without_link)
+                caption_text = "\n".join(header)
 
-            # Telegram caption limit is 1024 chars — if over, truncate
-            # the blockquote content and fall back to separate message.
-            if len(caption_text) <= 1024:
-                await update.effective_message.reply_photo(
-                    photo=photo,
-                    caption=caption_text,
-                    parse_mode="HTML",
-                )
-                if link_text not in caption_text:
-                    await send(update, link_text)
-                return
-            else:
-                # Caption too long — send photo with short caption,
-                # then text with details separately.
-                short_caption = "\n".join(header)[:1024]
-                await update.effective_message.reply_photo(
-                    photo=photo,
-                    caption=short_caption,
-                    parse_mode="HTML",
-                )
-                await send(update, link_text)
-                # Build full details text
-                full_lines = list(header)
-                if detail_lines:
-                    full_lines.append(
-                        f"\n<blockquote expandable>"
-                        f"{chr(10).join(detail_lines)}</blockquote>"
-                    )
-                _tb_footer3 = get_random_footer(t, FOOTER_CTX_TABLE)
-                if _tb_footer3:
-                    full_lines.append(_tb_footer3)
-                full_text = "\n".join(full_lines)
-
-                # If even the separate message is too long for Telegram
-                # (4096 char limit), publish full stats to Telegraph
-                if len(full_text) > 4000:
-                    short_msg = list(header)
-                    # Include top-5 in Telegram as a teaser
-                    if detail_lines:
-                        teaser = "\n".join(detail_lines[:5])
-                        short_msg.append(
-                            f"\n<blockquote expandable>"
-                            f"{teaser}\n…</blockquote>"
-                        )
-                    if _tb_footer3:
-                        short_msg.append(_tb_footer3)
-                    await send(update, "\n".join(short_msg))
-                    return
-
-                await send(update, full_text)
-                return
+            await update.effective_message.reply_photo(
+                photo=photo,
+                caption=caption_text,
+                parse_mode="HTML",
+            )
+            return
         except Exception as exc:
             log.warning("tablebomb image generation failed: %s", exc)
 
     # ── Text-only fallback (text_mode or image failed) ──────────────────
+    # Detail lines are still included here because the user explicitly
+    # requested text mode or the image path failed, and there is no photo
+    # to lean on.  If Telegraph is available the link is shown; if not,
+    # the inline detail is the only way to see the data.
     lines = list(header)
-    if detail_lines:
-        details_text = "\n".join(detail_lines)
-        lines.append(
-            f"\n<blockquote expandable>{details_text}</blockquote>"
-        )
     if tg_url is None:
         vs_data = get_goals_vs_opponents_for_tournament(t["id"])
         tg_url = _publish_bombardiers_telegraph(
@@ -890,26 +836,6 @@ async def cmd_table_bomb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         lines.append(_tb_footer2)
     lines.append("<i>Для текстовой версии: /tablebomb текст</i>")
     full_text = "\n".join(lines)
-
-    # If text exceeds Telegram limit, publish to Telegraph
-    if len(full_text) > 4000:
-        short_msg = list(header)
-        if detail_lines:
-            teaser = "\n".join(detail_lines[:5])
-            short_msg.append(
-                f"\n<blockquote expandable>{teaser}\n…</blockquote>"
-            )
-        _append_bombardiers_telegraph_or_fallback(
-            short_msg, tg_url, vs_data,
-            include_fallback=(tg_url is None),
-        )
-        if _tb_footer2:
-            short_msg.append(_tb_footer2)
-        try:
-            await send(update, "\n".join(short_msg))
-        except Exception:
-            pass
-        return
 
     try:
         await send(update, full_text)
