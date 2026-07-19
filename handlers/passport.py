@@ -101,7 +101,7 @@ async def cmd_passport(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"📋 Паспорт {mention(p['username'])}"
         f"{' (' + html.escape(p['game_nickname']) + ')' if p.get('game_nickname') else ''}\n"
         f"━━━━━━━━━━━━━━━━\n"
-        f"📝 Оставить заметку: /passport_note {mention(p['username'])} <текст>\n"
+        f"📝 Оставить заметку: /passport_note {mention(p['username'])} [текст]\n"
         f"📖 Все заметки: /passport_notes {mention(p['username'])}"
     )
 
@@ -114,7 +114,7 @@ async def cmd_passport(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_passport_note(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not ctx.args or len(ctx.args) < 2:
-        await send(update, "❌ Использование: /passport_note @username <текст заметки>")
+        await send(update, "❌ Использование: /passport_note @username [текст заметки]")
         return
 
     target_raw = ctx.args[0].lstrip("@").lower()
@@ -165,6 +165,6 @@ async def cmd_passport_notes(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         from_ = f"@{au}" if au else "—"
         lines.append(f"💬 {nt}\n   — {from_}")
     lines.append("━━━━━━━━━━━━━━━━")
-    lines.append("📝 Оставить: /passport_note @username <текст>")
+    lines.append("📝 Оставить: /passport_note @username [текст]")
 
     await send(update, "\n".join(lines))
